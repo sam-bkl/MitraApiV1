@@ -1,0 +1,67 @@
+# ---------------------------------
+# Python cache / compiled files
+# ---------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+
+# Unit test / coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+
+# Django stuff
+*.sqlite3
+*.db
+db.sqlite3
+media/
+staticfiles/
+static/
+
+# Flask / FastAPI
+instance/
+*.pid
+
+# Environment variables
+.env
+.env.*
+*.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE / Editor folders
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Mac / Windows system files
+.DS_Store
+Thumbs.db
+
+# MyPy, Pyright
+.mypy_cache/
+.pyre/
+.pytype/
+
+# VSCode Python extensions
+.python-version
