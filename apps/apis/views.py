@@ -2,8 +2,8 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from .models import CtopMaster,Simprepaid, Simpostpaid, GsmChoice ,ApiOtpTable, AppVersion,RefOtpTable,CosBcd
+from rest_framework.permissions import IsAuthenticated , AllowAny
+from .models import CtopMaster,Simprepaid, Simpostpaid, GsmChoice ,ApiOtpTable, AppVersion,RefOtpTable,CosBcd,FrcPlan
 from .serializers import CtopMasterSerializer,SimprepaidSerializer,SimpostpaidSerializer,GsmChoiceSerializer,AppVersionSerializer
 import random
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 import requests,json
 import time
 from django.utils.timezone import now
+from django.db import transaction
 
 
 @api_view(['POST'])
@@ -43,6 +44,16 @@ def check_ctopupno(request):
     try:
         # Check if the CTOP UP number exists
         ctop = CtopMaster.objects.get(username=ctopupno)
+        if ctop.circle_code == "65":
+            return Response(
+            {
+                
+                'status': "success",
+                'message': 'Not authorised',
+                #'data': serializer.data
+            },
+            status=status.HTTP_200_OK
+        )
         t2 = time.time()
         # If found, return success with data
         serializer = CtopMasterSerializer(ctop)
@@ -51,22 +62,22 @@ def check_ctopupno(request):
         
         # Save OTP in database
         ApiOtpTable.objects.create(
-            ctopupno=ctop.ctopupno,
+            ctopupno=ctop.username,
             otp=otp
         )
         t4 = time.time()
-        send_sms(ctop.ctopupno,otp)
+        send_sms(ctop.username,otp)
         t5 = time.time()
         total = t5 - t0
-        print(f"""
-            --- Timing Breakdown ---
-            Input validation: {t1 - t0:.4f}s
-            ORM fetch:        {t2 - t1:.4f}s
-            Serialization:    {t3 - t2:.4f}s
-            OTP Insert:       {t4 - t3:.4f}s
-            SMS Send:         {t5 - t4:.4f}s
-            TOTAL:            {total:.4f}s
-            """)
+        # print(f"""
+        #     --- Timing Breakdown ---
+        #     Input validation: {t1 - t0:.4f}s
+        #     ORM fetch:        {t2 - t1:.4f}s
+        #     Serialization:    {t3 - t2:.4f}s
+        #     OTP Insert:       {t4 - t3:.4f}s
+        #     SMS Send:         {t5 - t4:.4f}s
+        #     TOTAL:            {total:.4f}s
+        #     """)
         return Response(
             {
                 
@@ -118,25 +129,25 @@ def check_otp(request):
 
     try:
         # Check CTOP exists
-        CtopMaster.objects.get(username=ctopupno)
+        record = CtopMaster.objects.get(username=ctopupno)
 
         # Verify OTP
         otp_record = ApiOtpTable.objects.filter(
-            ctopupno=ctopupno,
+            ctopupno=record.username,
             otp=otp
         ).order_by('-created_at').first()
 
-        # otp_age = (timezone.now() - otp_record.created_at).total_seconds()
-        # if otp_age > 600:  # 10 minutes
-        #     # Delete expired OTP
-        #     otp_record.delete()
-        #     return Response(
-        #         {
-        #             'status': "failure",
-        #             'message': 'OTP has expired. Please request a new one.'
-        #         },
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
+        otp_age = (timezone.now() - otp_record.created_at).total_seconds()
+        if otp_age > 600:  # 10 minutes
+            # Delete expired OTP
+            otp_record.delete()
+            return Response(
+                {
+                    'status': "failure",
+                    'message': 'OTP has expired. Please request a new one.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         ctop = CtopMaster.objects.get(username=ctopupno)
 
@@ -150,7 +161,7 @@ def check_otp(request):
         refresh['token_type'] = 'refresh'
 
         # Add custom claims
-        refresh['ctopupno'] = ctop.ctopupno
+        refresh['ctopupno'] = ctop.username
         refresh['name'] = ctop.name
 
         # Access token from refresh
@@ -172,7 +183,11 @@ def check_otp(request):
                     'access_token':str(access_token),
                     'refresh_token':str(refresh),
                     'data':{
+                    #'ctopup_number':ctop.username,
                     'ctopup_number':ctop.ctopupno,
+                    'username':ctop.username,
+                    'ssa_code':ctop.ssa_code,
+                    'simswap_allowed':ctop.swap_allowed,
                     'name': ctop.name,
                     'vendor_code':ctop.attached_to,
                     'circle_code':str(ctop.circle_code),
@@ -246,11 +261,22 @@ def get_postpaid(request):
 
     try:
         # Query logic:
-        sim = Simpostpaid.objects.get(
-            status=1,
-            location=vendor_code,
-            simno__endswith=last5
-        )
+        # sim = Simpostpaid.objects.get(
+        #     status=1,
+        #     location=vendor_code,
+        #     simno__endswith=last5
+        # )
+        with transaction.atomic():
+            sim = (
+                Simpostpaid.objects
+                .filter(
+                    status=1,
+                    location=vendor_code,
+                    simno__endswith=last5
+                )
+                .exclude(product_code__in=['7004', '7003'])
+                .first()
+            )
 
         serializer = SimpostpaidSerializer(sim)
         simno = {'simno': serializer.data["simno"]}
@@ -322,12 +348,23 @@ def get_prepaid(request):
 
     try:
         # Query logic:
-        sim = Simprepaid.objects.get(
-            status=1,
-            location=vendor_code,
-            simno__endswith=last5
-        )
+        # sim = Simprepaid.objects.get(
+        #     status=1,
+        #     location=vendor_code,
+        #     simno__endswith=last5
+        # )
 
+        with transaction.atomic():
+            sim = (
+                Simprepaid.objects
+                .filter(
+                    status=1,
+                    location=vendor_code,
+                    simno__endswith=last5
+                )
+                .exclude(product_code__in=['7004', '7003'])
+                .first()
+            )
         serializer = SimprepaidSerializer(sim)
         simno = {'simno': serializer.data["simno"]}
         return Response(
@@ -389,11 +426,7 @@ def get_gsm_nos(request):
             status=9,
             circle_code=int(circle_code)
         ).order_by('?')[:20]
-                # Fetch matching GSM_CHOICE rows
-        # records = GsmChoice.objects.filter(
-        #     status=6,
-        #     circle_code=int(circle_code)
-        # )[:50]
+
 
         if not records.exists():
             return Response(
@@ -447,26 +480,25 @@ def update_gsm_status(request):
             },
             status=status.HTTP_400_BAD_REQUEST
         )
-
+    
     try:
-        # Fetch GSM record
-        record = GsmChoice.objects.get(gsmno=gsmno)
-
-        # Allow update ONLY if current status is 6
-        if record.status != 9:
-            return Response(
-                {
-                    "status": "failure",
-                    "message": f"Cannot update. Already Reserved"
-                },
-                status=status.HTTP_400_BAD_REQUEST
+        with transaction.atomic():
+            updated = GsmChoice.objects.filter(
+                gsmno=gsmno,
+                status=9   # ONLY update if status is 9
+            ).update(
+                status=99,
+                trans_date=timezone.now()
             )
 
-        # Update fields
-        record.status = 99
-        record.trans_date = timezone.now()
-
-        record.save(update_fields=["status", "trans_date"])
+            if updated == 0:
+                return Response(
+                    {
+                        "status": "failure",
+                        "message": "GSM not found or already processed"
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
 
         return Response(
             {
@@ -476,23 +508,58 @@ def update_gsm_status(request):
             status=status.HTTP_200_OK
         )
 
-    except GsmChoice.DoesNotExist:
-        return Response(
-            {
-                "status": "failure",
-                "message": "GSM number not found"
-            },
-            status=status.HTTP_404_NOT_FOUND
-        )
-
     except Exception as e:
         return Response(
-            {
-                "status": "failure",
-                "message": f"Error: {str(e)}"
-            },
+            {"status": "failure", "message": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+    
+    ###############################################################################################
+    # try:
+    #     # Fetch GSM record
+    #     record = GsmChoice.objects.get(gsmno=gsmno)
+
+    #     # Allow update ONLY if current status is 6
+    #     if record.status != 9:
+    #         return Response(
+    #             {
+    #                 "status": "failure",
+    #                 "message": f"Cannot update. Already Reserved"
+    #             },
+    #             status=status.HTTP_400_BAD_REQUEST
+    #         )
+
+    #     # Update fields
+    #     record.status = 99
+    #     record.trans_date = timezone.now()
+
+    #     record.save(update_fields=["status", "trans_date"])
+
+    #     return Response(
+    #         {
+    #             "status": "success",
+    #             "message": f"GSM {gsmno} updated successfully"
+    #         },
+    #         status=status.HTTP_200_OK
+    #     )
+
+    # except GsmChoice.DoesNotExist:
+    #     return Response(
+    #         {
+    #             "status": "failure",
+    #             "message": "GSM number not found"
+    #         },
+    #         status=status.HTTP_404_NOT_FOUND
+    #     )
+
+    # except Exception as e:
+    #     return Response(
+    #         {
+    #             "status": "failure",
+    #             "message": f"Error: {str(e)}"
+    #         },
+    #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    #     )
 
 
 
@@ -584,7 +651,7 @@ def add_aadhaar(request):
     # Validate CTOP number
     if not ctopupno:
         return Response(
-            {"status": "failure", "message": "CTOP UP number is required"},
+            {"status": "failure", "message": "Username  is required"},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -597,7 +664,7 @@ def add_aadhaar(request):
 
     try:
         # Check CTOP user exists
-        ctop = CtopMaster.objects.get(ctopupno=ctopupno)
+        ctop = CtopMaster.objects.get(username=ctopupno)
 
         # Update Aadhaar number
         ctop.aadhaar_no = aadhaar_no
@@ -609,7 +676,7 @@ def add_aadhaar(request):
                 "status": "success",
                 "message": "Aadhaar number updated successfully",
                 "data":{
-                    'ctopup_number':ctop.ctopupno,
+                    'ctopup_number':ctop.username,
                     'name': ctop.name,
                     'vendor_code':ctop.attached_to,
                     'circle_code':str(ctop.circle_code),
@@ -817,36 +884,85 @@ def check_verification_status(request):
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-        status_param= None
-        # Filter records
-        records = CosBcd.objects.filter(
-            de_username=username,
-            verified_flag=status_param
-        )
+        
+        # Map request status to database values
+        status_mapping = {
+            "caf_pending": None,  # NULL or empty in database
+            "caf_active": "Y",
+            "caf_rejected": "R",
+            "caf_see_later": "F"  # F = see later/deferred
+        }
+
+        status_param = status_mapping.get(status_param, "INVALID")
+
+        if status_param == "INVALID":
+            return Response(
+                {
+                    "status": "failure",
+                    "message": "Invalid status. Use caf_pending, caf_active, caf_rejected, or caf_see_later"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Filter records - handle NULL case
+        if status_param is None:
+            records = CosBcd.objects.filter(
+                de_username=username,
+                verified_flag__isnull=True
+            ) | CosBcd.objects.filter(
+                de_username=username,
+                verified_flag=""
+            )
+        else:
+            records = CosBcd.objects.filter(
+                de_username=username,
+                verified_flag=status_param
+            )
 
         if not records.exists():
             return Response(
                 {
-                    "status": "failure",
-                    "message": "No records found for this username and status"
+                    "count": 0,
+                    "records": []
                 },
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_200_OK
             )
-
+        
         # Build list of response objects
         result_list = []
         current_time = timezone.now().isoformat()
 
+        status_map = {
+            "Y": "approved",
+            "R": "rejected",
+            "F": "see_later",
+        }
+
         for rec in records:
+            vf = (rec.verified_flag or "").upper().strip()
+
+            # If NULL/empty → pending, otherwise map
+            status_value = status_map.get(vf, "pending")
+
             item = {
                 "caf_id": getattr(rec, "caf_serial_no", None),
                 "mobileno": rec.gsmnumber,
                 "simnumber": getattr(rec, "simnumber", None),
-                "category": "prepaid" if getattr(rec, "category", 1) == 1 else "postpaid",
-                "time_act": current_time,
-                "status": "pending" 
-                #if rec.verified_flag == "0" else "approved",
+                "caf_type" : rec.caf_type,
+                "category": "prepaid" if getattr(rec, "connection_type", 1) == 1 else "postpaid",
+                "time_act": (
+                    rec.verified_date.isoformat()
+                    if getattr(rec, "verified_date", None)
+                    else (
+                        rec.live_photo_time.isoformat()
+                        if getattr(rec, "live_photo_time", None)
+                        else None
+                    )
+                ),
+                "status": status_value,
+                "rejection_reason": getattr(rec, "rejection_reason", None) or ""
             }
+
             result_list.append(item)
 
         return Response(
@@ -862,3 +978,55 @@ def check_verification_status(request):
             {"status": "failure", "message": f"Error: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Heartbeat usually doesn't require auth
+def heartbeat(request):
+    return Response({
+        "status": "ok",
+        "message": "Service healthy",
+        "time": timezone.now()
+    }, status=200)
+
+@api_view(['POST'])
+#@permission_classes([IsAuthenticated])
+def get_frc_plans(request):
+    try:
+        circle = request.data.get("circle_code")
+
+        if not circle:
+            return Response({
+                "status": "error",
+                "message": "circle_code is required"
+            }, status=400)
+
+        # Get PLANS for passed circle
+        circle_plans = FrcPlan.objects.filter(circle_code=circle)
+
+        # Get COMMON PLANS (circle 9999)
+        common_plans = FrcPlan.objects.filter(circle_code="9999")
+
+        # Combine both
+        plans = list(circle_plans) + list(common_plans)
+
+        result = [
+            {
+                "plan_name": p.plan_name,
+                "plan_code": p.plan_code,
+                "category_code": p.category_code,
+            }
+            for p in plans
+        ]
+
+        return Response({
+            "status": "success",
+            "count": len(result),
+            "plans": result
+        }, status=200)
+
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": str(e)
+        }, status=500)

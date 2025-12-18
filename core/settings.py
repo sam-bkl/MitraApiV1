@@ -61,7 +61,7 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': 'VS6m_t%UCCh;bmJn_}5D.q9]0k[(3&b/(?F%DaPnxBA27BJ3EyMkfQH?pH4&}L_K',  # Use same as SECRET_KEY or environment variable
+    'SIGNING_KEY': 'VS6m_t%UCCh;bmJn_}5D.q9]0k[(3&b/(?F%DaPnxBA27BJ3EyMkfQH?pH4&}L_J',  # Use same as SECRET_KEY or environment variable
 }
 
 TIME_ZONE = 'Asia/Kolkata'
@@ -179,3 +179,4 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+AADHAAR_PEPPER = env("AADHAAR_PEPPER")

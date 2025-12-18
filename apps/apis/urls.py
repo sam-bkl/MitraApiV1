@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import check_ctopupno,get_postpaid,get_prepaid,check_otp,get_gsm_nos,update_gsm_status,refresh_token, get_app_version,add_aadhaar,adhar_api_forward,resend_otp,local_ref_otp,local_ref_otp_verfiy, check_verification_status 
+from .views import check_ctopupno,get_postpaid,get_prepaid,check_otp,get_gsm_nos,update_gsm_status,refresh_token, get_app_version,add_aadhaar,adhar_api_forward,resend_otp,local_ref_otp,local_ref_otp_verfiy, check_verification_status , heartbeat, get_frc_plans
 from .caf_pos_view import update_caf_details
 urlpatterns = [
     path('check-ctopupno/', check_ctopupno, name='check-ctopupno'),
@@ -17,6 +17,9 @@ urlpatterns = [
     path('local_ref_otp/', local_ref_otp, name='local-ref-otp'),
     path('local_ref_otp_verfiy/', local_ref_otp_verfiy, name='local-ref-otp-verfiy'),
     path('get_act_status/', check_verification_status, name='get-act-status'),
+    path('frc_plans/', get_frc_plans, name='frc_plans'),
+    path('heartbeat/', heartbeat, name='heartbeat'),
+
 
     
 

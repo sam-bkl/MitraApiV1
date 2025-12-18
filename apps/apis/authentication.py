@@ -34,7 +34,7 @@ class CtopJWTAuthentication(BaseAuthentication):
 
         # Load CtopMaster
         try:
-            user = CtopMaster.objects.get(ctopupno=ctopupno)
+            user = CtopMaster.objects.get(username=ctopupno)
         except CtopMaster.DoesNotExist:
             raise AuthenticationFailed("User not found")
 

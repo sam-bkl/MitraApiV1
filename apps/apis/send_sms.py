@@ -26,8 +26,6 @@ def send_sms(number,otp):
                     "MessageBody": f"{otp} is the OTP for login at BSNL COS.The OTP is valid for 10 minutes.Do not share with anyone."
                 }
     response = requests.post(url, json=payload, headers=headers,timeout=30)
-    print("STATUS:", response.status_code)
-    print("RESPONSE:", response.text)
     return
 
 def ref_send_sms(number,otp):
@@ -52,7 +50,5 @@ def ref_send_sms(number,otp):
                     "MessageBody": f"{otp} is the OTP for local reference at BSNL Sim Activation.The OTP is valid for 10 minutes.Do not share with anyone."
                 }
     response = requests.post(url, json=payload, headers=headers,timeout=30)
-    print("STATUS:", response.status_code)
-    print("RESPONSE:", response.text)
     return
 

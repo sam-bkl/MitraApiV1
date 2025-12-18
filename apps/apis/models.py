@@ -29,6 +29,9 @@ class CtopMaster(models.Model):
     longitude = models.TextField(null=True)
     aadhaar_no = models.CharField(max_length=20, null=True)
     zone_code = models.CharField(max_length=5, null=True)
+    swap_allowed = models.CharField(max_length=2, null=True)
+    swap_allowed_time = models.DateTimeField(null=True)
+    swap_allowed_user  = models.CharField(max_length=100, null=True)
 
     class Meta:
         managed = False
@@ -213,6 +216,7 @@ class CosBcd(models.Model):
     stdpco = models.CharField(max_length=150, null=True)
     workorder = models.CharField(max_length=150, null=True)
     caf_avail = models.CharField(max_length=60, null=True)
+    rejection_reason = models.CharField(max_length=60, null=True)
     caf_rejected = models.CharField(max_length=3, null=True)
     caf_recd_date = models.DateTimeField(null=True)
     intd_flag = models.IntegerField(null=True)
@@ -351,6 +355,14 @@ class CosBcd(models.Model):
     caf_type = models.CharField(max_length=50,null=True)
     ref_otp = models.CharField(max_length=10, null=True)
     ref_otp_time = models.DateTimeField(null=True)
+    mnp_connection_type = models.IntegerField(null=True)
+    frc_plan_name = models.CharField(max_length=200, null=True, blank=True)
+    frc_plan_code = models.CharField(max_length=50, null=True, blank=True)
+    frc_category_code = models.CharField(max_length=50, null=True, blank=True)
+    frc_ctopup_number = models.CharField(max_length=50, null=True, blank=True)
+    frc_ctopup_number_mpin = models.CharField(max_length=10, null=True, blank=True)
+    father_name_adh = models.CharField(max_length=150, null=True, blank=True)
+    parent_ctopup_number = models.CharField(max_length=20, null=True, blank=True)
 
     class Meta:
         managed = False
@@ -361,3 +373,88 @@ class CosBcd(models.Model):
 #     version = models.CharField(max_length=15)
 #     def __str__(self):
 #         return self.version
+
+
+class SimAllotmentAdh(models.Model):
+    id = models.AutoField(primary_key=True)
+    aadhaar_hash = models.TextField()
+    gsm_no = models.CharField(max_length=20)
+    circle_code = models.CharField(max_length=10)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False  # Important: Table already exists
+        db_table = 'sim_allotments_adh'
+
+class FrcPlan(models.Model):
+    id = models.AutoField(primary_key=True)
+    plan_name = models.CharField(max_length=200)
+    plan_code = models.CharField(max_length=50)
+    category_code = models.CharField(max_length=50)
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    circle_code = models.CharField(max_length=10)
+
+    class Meta:
+        managed = False
+        db_table = "frc_plan_table"
+
+from django.db import models
+
+
+class CafSimSwapDetails(models.Model):
+    id = models.AutoField(primary_key=True)
+
+    # Basic SIM Swap Info
+    caf_id = models.CharField(max_length=50, db_column='caf_id', null=True, blank=True)
+    connection_type = models.CharField(max_length=50, db_column='connection_type', null=True, blank=True)
+    swap_reason = models.CharField(max_length=50, db_column='swap_reason', null=True, blank=True)
+    circle = models.CharField(max_length=100, db_column='circle', null=True, blank=True)
+    cir_code_pos = models.CharField(max_length=100, db_column='cir_code_pos', null=True, blank=True)
+    mobile_number = models.CharField(max_length=15, db_column='mobile_number', null=True, blank=True)
+    document_type = models.CharField(max_length=50, db_column='document_type', null=True, blank=True)
+    act_type = models.CharField(max_length=50, db_column='act_type', null=True, blank=True)
+
+    # FIR Details
+    intimated_bsnl = models.CharField(max_length=10, db_column='intimated_bsnl', null=True, blank=True)
+    date_of_lost = models.DateField(db_column='date_of_lost', null=True, blank=True)
+    fir_photo_path = models.CharField(max_length=500, db_column='fir_photo_path', null=True, blank=True)
+
+    # SancharSoft Fields
+    ss_account_no = models.CharField(max_length=50, db_column='ss_account_no', null=True, blank=True)
+    ss_bill_fname = models.CharField(max_length=150, db_column='ss_bill_fname', null=True, blank=True)
+    ss_bill_lname = models.CharField(max_length=150, db_column='ss_bill_lname', null=True, blank=True)
+    ss_bill_minit = models.CharField(max_length=50, db_column='ss_bill_minit', null=True, blank=True)
+    ss_address1 = models.CharField(max_length=255, db_column='ss_address1', null=True, blank=True)
+    ss_address2 = models.CharField(max_length=255, db_column='ss_address2', null=True, blank=True)
+    ss_address3 = models.CharField(max_length=255, db_column='ss_address3', null=True, blank=True)
+    ss_city = models.CharField(max_length=100, db_column='ss_city', null=True, blank=True)
+    ss_state = models.CharField(max_length=50, db_column='ss_state', null=True, blank=True)
+    ss_zip = models.CharField(max_length=20, db_column='ss_zip', null=True, blank=True)
+    ss_in_active_date = models.DateTimeField(db_column='ss_in_active_date', null=True, blank=True)
+    ss_emf_config_id = models.CharField(max_length=50, db_column='ss_emf_config_id', null=True, blank=True)
+    ss_connection_type = models.CharField(max_length=50, db_column='ss_connection_type', null=True, blank=True)
+    ss_uid_no = models.CharField(max_length=50, db_column='ss_uid_no', null=True, blank=True)
+    ss_customer_uid_token = models.CharField(max_length=150, db_column='ss_customer_uid_token', null=True, blank=True)
+    ss_act_type = models.CharField(max_length=50, db_column='ss_act_type', null=True, blank=True)
+    ss_acc_balance = models.DecimalField(max_digits=12, decimal_places=2, db_column='ss_acc_balance', null=True, blank=True)
+    ss_sim_number = models.CharField(max_length=30, db_column='ss_sim_number', null=True, blank=True)
+    ss_amount_req = models.CharField(max_length=10, db_column='ss_amount_req', null=True, blank=True)
+    ss_caf_serial_no = models.CharField(max_length=50, db_column='ss_caf_serial_no', null=True, blank=True)
+    ss_ssa_code = models.CharField(max_length=50, db_column='ss_ssa_code', null=True, blank=True)
+
+    # Audit Info
+    approved_csc = models.CharField(max_length=30, db_column='approved_csc', null=True, blank=True)
+    approved_date = models.DateField(db_column='approved_date', null=True, blank=True)
+    approved_csc_ip = models.CharField(max_length=50, db_column='approved_csc_ip', null=True, blank=True)
+
+    insert_user = models.CharField(max_length=50, db_column='insert_user', null=True, blank=True)
+    ins_user_ip = models.CharField(max_length=50, db_column='ins_user_ip', null=True, blank=True)
+    insert_date = models.DateTimeField(db_column='insert_date', null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = 'caf_sim_swap_details'
+
+
+

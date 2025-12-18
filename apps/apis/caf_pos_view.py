@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 import base64,os
 from . import create_cafid
 from datetime import datetime
+from .utils import is_sim_allotted_today, insert_sim_allotment
+from  .helperviews.simswap import simswap_save
 
 
 
@@ -39,10 +41,30 @@ def update_caf_details(request):
         actual_ip = remote_addr
 
     ###############
-
-    ctopupno = request.data.get("ctopup_number")
-    vendor_code = request.data.get("vendorcode")
+    customer_aadhaar = request.data.get("customer_aadhaar")
     circle_code = request.data.get("circle_code")
+    if not customer_aadhaar:
+        return Response({
+            "status": "error",
+            "message": "aadhaar is required"
+        }, status=400)
+    #####################check aadhaar #######################
+    exists, previous_gsm = is_sim_allotted_today(customer_aadhaar, circle_code)
+    if exists:
+        return Response({
+            "status": "failed",
+            "message": "SIM already allotted within restriction window",
+            "previous_gsm": previous_gsm
+        }, status=400)
+
+
+    #########################################
+    ctopupno = request.data.get("ctopup_number")
+    ssa_code = request.data.get("ssa_code")
+    username= request.data.get("ctopup_username")
+    if not username:
+        username = ctopupno
+    vendor_code = request.data.get("vendorcode")
     mobileno = request.data.get("mobileno")
     pwd = request.data.get("pwd")
     connection_type = request.data.get("connection_type")
@@ -56,6 +78,7 @@ def update_caf_details(request):
     posUid = request.data.get("posUid", {})
     posPoi = request.data.get("posPoi", {})
     posPoa = request.data.get("posPoa", {})
+    mnp_details = request.data.get("mnp_details", {})
     posPht = request.data.get("posPht")
     pos_unique_code = request.data.get("pos_unique_code")
     pos_res_timestamp = request.data.get("pos_res_timestamp")
@@ -73,17 +96,26 @@ def update_caf_details(request):
     current_location = request.data.get("current_location", {})
     lat = current_location.get("lat")
     lng = current_location.get("lng")
-    local_reference = request.data.get("local_reference", {})
-    photo_base64 = request.data.get("Pht", None)
-    upc_code = request.data.get("upc_code")
-    upcValidUpto = request.data.get("upcValidUpto")
+    local_reference = request.data.get("outstation_reference", {})
+    photo_base64 = request.data.get("Pht", None)  
+    upc_code = mnp_details.get("upc")
+    upcValidUpto = mnp_details.get("upcValidUptoDate")
+    mnp_connection_type = mnp_details.get("mnpConnectionType")
     caf_type = request.data.get("caf_type")
 
     decoded_photo = None
     decoded_live_photo = None
     decoded_pos_photo = None
     decoded_pos_ad_photo = None
-    if app_version != "1.0.2":
+    # if app_version != "1.0.4" or app_version != "1.0.5":
+    #     return Response(
+    #         {"status": "error", "message": "Update required"},
+    #         status=status.HTTP_403_FORBIDDEN
+    #     )
+    
+    ALLOWED_VERSIONS = {"1.0.6"}
+
+    if app_version not in ALLOWED_VERSIONS:
         return Response(
             {"status": "error", "message": "Update required"},
             status=status.HTTP_403_FORBIDDEN
@@ -165,6 +197,17 @@ def update_caf_details(request):
                     status=400
                 )
     caf_no=create_cafid.get_caf_id()
+    if caf_type == 'simswap':
+        simswap_result = simswap_save(request, caf_no, ctopupno, actual_ip,mobileno)
+        if simswap_result.get("status") == "success":
+            pass
+        else:
+            return Response(
+                simswap_result,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
     today = datetime.now()
     year = today.strftime("%Y")
     month = today.strftime("%m")
@@ -222,9 +265,11 @@ def update_caf_details(request):
     # --------------------------
     f_h_name = poa.get("@co")
     house = poa.get("@house")
+    street = poa.get("@street")
     landmark = poa.get("@lm")
-    locality = poa.get("@locality") or None
+    locality = poa.get("@loc") or None
     vtc = poa.get("@vtc")
+    subdistrict = poa.get("@subdist")
     district = poa.get("@dist")
     state = poa.get("@state")
     pin = poa.get("@pc")
@@ -233,9 +278,11 @@ def update_caf_details(request):
     # Update the CosBcd record
     # --------------------------
     record.de_csccode=vendor_code
-    record.de_username=ctopupno 
+    record.de_username=username
+    record.parent_ctopup_number= ctopupno
     record.gsmnumber= mobileno
     record.simnumber= simno
+    record.ssa_code = ssa_code
     record.caf_serial_no= caf_no
     if connection_type=="postpaid":
         record.connection_type=2
@@ -259,8 +306,27 @@ def update_caf_details(request):
     ref_district = local_reference.get("ref_district")
 
     ##################################################################################
+    # --------------------------
+    # Extract FRC details (only for postpaid)
+    # --------------------------
+    frc_details = request.data.get("frc_details") or {}
+
+    frc_plan = frc_details.get("frc_plan_prepaid", {})
+
+    frc_plan_name = frc_plan.get("plan_name")
+    frc_plan_code = frc_plan.get("plan_code")
+    frc_category_code = frc_plan.get("category_code")
+
+    frc_ctopup_number = frc_details.get("frc_ctopup_number")
+    frc_ctopup_number_mpin = frc_details.get("frc_ctopup_number_mpin")
+    ##################################################################################
     record.upc_code = upc_code
     record.upcvalidupto = upcValidUpto
+    if caf_type =='mnp':
+        if mnp_connection_type=="postpaid":
+            record.mnp_connection_type = 2
+        else:
+            record.mnp_connection_type = 1
     record.caf_type = caf_type
     record.ref_otp = ref_otp
     record.ref_otp_time = ref_otp_timestamp
@@ -269,10 +335,11 @@ def update_caf_details(request):
     record.f_h_name = father_husband_name
     record.gender = gender
     record.date_of_birth = dob
+    record.father_name_adh = f_h_name
     record.perm_addr_hno = house
-    record.perm_addr_street = landmark
-    record.perm_addr_locality = ", ".join(filter(None, [locality, district]))
-    record.perm_addr_city = vtc
+    record.perm_addr_street = ", ".join(filter(None, [street, landmark])) 
+    record.perm_addr_locality = ", ".join(filter(None, [locality, vtc])) 
+    record.perm_addr_city = ", ".join(filter(None, [subdistrict, district]))
     record.perm_addr_state = state
     record.perm_addr_pin = pin if pin and pin.isdigit() else None
     record.unq_resp_code_pos = pos_unique_code
@@ -309,6 +376,12 @@ def update_caf_details(request):
     record.local_addr_city = ref_city
     record.local_addr_state = ref_state
     record.local_addr_pin = ref_pin
+    if connection_type == "prepaid":
+        record.frc_plan_name = frc_plan_name
+        record.frc_plan_code = frc_plan_code
+        record.frc_category_code = frc_category_code
+        record.frc_ctopup_number = frc_ctopup_number
+        record.frc_ctopup_number_mpin = frc_ctopup_number_mpin
     record.save()
     
     current_time = datetime.now().isoformat()
@@ -326,6 +399,8 @@ def update_caf_details(request):
             "status": "error",
             "message": response["message"]
         }, status=400)
+    
+    insert_sim_allotment(customer_aadhaar, mobileno, circle_code)
 
 
     return Response({
