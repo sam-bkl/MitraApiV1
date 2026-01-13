@@ -8,3 +8,9 @@ gunicorn
 djangorestframework-simplejwt
 requests
 psycopg[binary,pool]
+oracledb
+opencv-python-headless
+numpy
+mediapipe
+cx_Oracle==8.3
+python-dotenv

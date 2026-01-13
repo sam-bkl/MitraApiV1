@@ -15,6 +15,9 @@ from . import create_cafid
 from datetime import datetime
 from .utils import is_sim_allotted_today, insert_sim_allotment
 from  .helperviews.simswap import simswap_save
+from django.db import transaction
+from django.db import DatabaseError
+from .helper_functions import check_gsm_caf_logic
 
 
 
@@ -51,11 +54,18 @@ def update_caf_details(request):
     #####################check aadhaar #######################
     exists, previous_gsm = is_sim_allotted_today(customer_aadhaar, circle_code)
     if exists:
-        return Response({
-            "status": "failed",
-            "message": "SIM already allotted within restriction window",
-            "previous_gsm": previous_gsm
-        }, status=400)
+        verified_flag = (
+            CosBcd.objects
+            .filter(gsmnumber=previous_gsm)
+            .values_list("verified_flag", flat=True)
+            .first()
+        )
+        if verified_flag != "R":
+            return Response({
+                "status": "failed",
+                "message": "SIM already allotted within restriction window",
+                "previous_gsm": previous_gsm
+            }, status=400)
 
 
     #########################################
@@ -89,7 +99,7 @@ def update_caf_details(request):
     email_id = request.data.get("email_id")
     customer_alternate_mobile_number = request.data.get("customer_alternate_mobile_number")
     subscriber_live_photo = request.data.get("subscriber_live_photo")
-    pos_live_photo = request.data.get("pos_live_photo")
+    #pos_live_photo = request.data.get("pos_live_photo")
     #device_ip = request.data.get("device_ip")
     device_mac = request.data.get("device_mac")
     app_version = request.data.get("app_version")
@@ -102,7 +112,9 @@ def update_caf_details(request):
     upcValidUpto = mnp_details.get("upcValidUptoDate")
     mnp_connection_type = mnp_details.get("mnpConnectionType")
     caf_type = request.data.get("caf_type")
-
+    pwd_per_disability= request.data.get("pwd_per_disability", None)
+    profession = request.data.get("profession", None)
+    pwd_certificate = request.data.get("pwd_certificate", None)
     decoded_photo = None
     decoded_live_photo = None
     decoded_pos_photo = None
@@ -113,7 +125,15 @@ def update_caf_details(request):
     #         status=status.HTTP_403_FORBIDDEN
     #     )
     
-    ALLOWED_VERSIONS = {"1.0.6"}
+    ALLOWED_VERSIONS = {"1.1.0"}
+    result = check_gsm_caf_logic(mobileno,caf_type)
+    if result["Allow"] == "No":
+        return Response(
+            {"status": "error", "message": result["Reason"]},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    
 
     if app_version not in ALLOWED_VERSIONS:
         return Response(
@@ -156,9 +176,22 @@ def update_caf_details(request):
     else:
         return Response(
                     {"status": "failure", "message": "No Aadhaar photo"},
-                    status=400
+                    status=200
                 )
-
+    if pwd_certificate:
+        try:
+            decoded_pwd_img_photo = base64.b64decode(pwd_certificate)
+            if decoded_pwd_img_photo is None:
+                return Response(
+                    {"status": "failure", "message": "Invalid PWD Certificate photo"},
+                    status=200
+                )
+        except Exception:
+            return Response(
+                {"status": "failure", "message": "Invalid PWD Certificate photo"},
+                status=200
+            )
+ 
     
     if subscriber_live_photo:
         try:
@@ -178,6 +211,7 @@ def update_caf_details(request):
                     {"status": "failure", "message": "No Aadhaar photo"},
                     status=400
                 )
+    """ pos live photo
     if pos_live_photo:
         try:
             decoded_pos_live_photo = base64.b64decode(pos_live_photo)
@@ -195,11 +229,13 @@ def update_caf_details(request):
         return Response(
                     {"status": "failure", "message": "No Aadhaar photo"},
                     status=400
-                )
+    """
     caf_no=create_cafid.get_caf_id()
+    simstate= circle_code
     if caf_type == 'simswap':
         simswap_result = simswap_save(request, caf_no, ctopupno, actual_ip,mobileno)
         if simswap_result.get("status") == "success":
+            simstate = simswap_result.get("circle_code_cust")
             pass
         else:
             return Response(
@@ -228,14 +264,19 @@ def update_caf_details(request):
     pos_adh_image_file = f"{caf_no}pa.jpg"
     live_image_file = f"{caf_no}l.jpg"
     adh_image_file= f"{caf_no}a.jpg"
+    if pwd_certificate:
+        pwd_image_file = f"{caf_no}pwd.jpg"
+        with open(os.path.join(full_dir, pwd_image_file), "wb") as f:
+            f.write(decoded_pwd_img_photo)
     with open(os.path.join(full_dir, adh_image_file), "wb") as f:
         f.write(decoded_photo)
-    with open(os.path.join(full_dir, pos_image_file), "wb") as f:
-        f.write(decoded_pos_live_photo)
+    # with open(os.path.join(full_dir, pos_image_file), "wb") as f:
+    #     f.write(decoded_pos_live_photo)
     with open(os.path.join(full_dir, live_image_file), "wb") as f:
         f.write(decoded_subscriber_live_photo)
     with open(os.path.join(full_dir, pos_adh_image_file), "wb") as f:
         f.write(decoded_pos_ad_photo)
+    
     record = CosBcd(caf_serial_no=caf_no)
     if not caf_no:
         return Response({"status": "failure", "message": "caf_serial_no missing"}, status=400)
@@ -252,7 +293,6 @@ def update_caf_details(request):
     pos_name_adh = posPoi.get("@name")
     dob_str = poi.get("@dob")
     gender = poi.get("@gender")
-    print("email id is ", email_id)
     dob = None
     if dob_str:
         try:
@@ -284,6 +324,7 @@ def update_caf_details(request):
     record.simnumber= simno
     record.ssa_code = ssa_code
     record.caf_serial_no= caf_no
+    record.simstate = simstate
     if connection_type=="postpaid":
         record.connection_type=2
     else:
@@ -304,6 +345,18 @@ def update_caf_details(request):
     ref_city = local_reference.get("ref_village_town_city")
     ref_pin = local_reference.get("ref_pin_code")
     ref_district = local_reference.get("ref_district")
+    #####################################################################################
+    ###########  Extract Postpaid Plan details ##########################################
+    postpaid_details = request.data.get("postpaid_details", {}) or {}
+    std_isd = postpaid_details.get("stdIsd")
+    deposit = postpaid_details.get("deposit")
+    reason_for_no_deposit = postpaid_details.get("reasonForNoDeposit")
+    method_of_payment = postpaid_details.get("methodOfPayment")
+    amount_received = postpaid_details.get("amountReceived")
+    plan = postpaid_details.get("plan", {}) or {}
+    postpaid_plan_name = plan.get("plan_name")
+    
+
 
     ##################################################################################
     # --------------------------
@@ -320,6 +373,16 @@ def update_caf_details(request):
     frc_ctopup_number = frc_details.get("frc_ctopup_number")
     frc_ctopup_number_mpin = frc_details.get("frc_ctopup_number_mpin")
     ##################################################################################
+    ############# USIM INSERT ########################################################
+    if connection_type=="postpaid":
+        sim = Simpostpaid.objects.filter(simno=simno).only("product_code").first()   
+    else:
+        sim = Simprepaid.objects.filter(simno=simno).only("product_code").first() 
+    if sim and sim.product_code in (7003, 7004):
+        record.sim_type = 2
+    else:
+        record.sim_type = 1 
+    ##################################################################################
     record.upc_code = upc_code
     record.upcvalidupto = upcValidUpto
     if caf_type =='mnp':
@@ -331,10 +394,12 @@ def update_caf_details(request):
     record.ref_otp = ref_otp
     record.ref_otp_time = ref_otp_timestamp
     record.pwd=pwd
+    record.pwd_per_disability = pwd_per_disability
     record.name = name
     record.f_h_name = father_husband_name
     record.gender = gender
     record.date_of_birth = dob
+    record.profession = profession 
     record.father_name_adh = f_h_name
     record.perm_addr_hno = house
     record.perm_addr_street = ", ".join(filter(None, [street, landmark])) 
@@ -382,7 +447,31 @@ def update_caf_details(request):
         record.frc_category_code = frc_category_code
         record.frc_ctopup_number = frc_ctopup_number
         record.frc_ctopup_number_mpin = frc_ctopup_number_mpin
+    else:
+        record.std_isd = std_isd
+        record.deposit_required = deposit
+        record.no_deposit_reason = reason_for_no_deposit
+        record.postpaid_plan_name = postpaid_plan_name
+        record.payment_method = method_of_payment
+        record.amount_received = amount_received
+        
     record.save()
+    if not CosBcd.objects.filter(caf_serial_no=caf_no).exists():
+        raise DatabaseError("CAF insert failed")
+    
+    # try:
+    #     with transaction.atomic():
+    #         record.save()
+    #         if not CosBcd.objects.filter(caf_serial_no=caf_no).exists():
+    #             raise DatabaseError("CAF insert failed")
+    # except DatabaseError:
+    #     return Response(
+    #         {
+    #             "status": "error",
+    #             "message": "CAF save failed, please retry"
+    #         },
+    #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    #     )
     
     current_time = datetime.now().isoformat()
     # gsm_obj = GsmChoice.objects.get(gsmno=mobileno)

@@ -1,6 +1,15 @@
 from django.urls import path
-from .views import check_ctopupno,get_postpaid,get_prepaid,check_otp,get_gsm_nos,update_gsm_status,refresh_token, get_app_version,add_aadhaar,adhar_api_forward,resend_otp,local_ref_otp,local_ref_otp_verfiy, check_verification_status , heartbeat, get_frc_plans
+from .views import check_ctopupno,get_postpaid,get_prepaid,check_otp,get_gsm_nos,update_gsm_status,refresh_token, get_app_version,add_aadhaar,adhar_api_forward,resend_otp,local_ref_otp,local_ref_otp_verfiy, check_verification_status , heartbeat, get_frc_plans, check_vrf_status, release_sim, get_postpaid_plans, upgradation_send_otp,upgradation_verify_otp,upgradation_resend_otp, check_gsm_caf, check_aadhaar_onboarding
 from .caf_pos_view import update_caf_details
+from .helperviews.mnp_update import get_final_act_status, edit_mnp
+from .helperviews.photo_check_view import verify_selfie
+from .testapis import get_prepaid_test
+from .dkyc.dkyc_view import create_dkyc_record,dkyc_send_otp,dkyc_verify_otp, dkyc_resend_otp
+from .features.gsm_filter_view import search_gsm_numbers
+from .features.reserve_numbers import reserve_gsm_number,get_reserved_gsm_numbers
+from .external_data.ssdata import get_customer_info
+from .features.sim_upgrade.views import create_sim_upgrade_request,get_app_upgrade_options,list_sim_upgrade_requests
+from .esim.views import get_esim_by_simnumber
 urlpatterns = [
     path('check-ctopupno/', check_ctopupno, name='check-ctopupno'),
     path('get-postpaid/', get_postpaid, name='get-postpaid'),
@@ -18,8 +27,42 @@ urlpatterns = [
     path('local_ref_otp_verfiy/', local_ref_otp_verfiy, name='local-ref-otp-verfiy'),
     path('get_act_status/', check_verification_status, name='get-act-status'),
     path('frc_plans/', get_frc_plans, name='frc_plans'),
+    path('get_final_act_status/',get_final_act_status , name='get-final-act-status'),
+    path('edit_upc/',edit_mnp, name='edit-upc'),
+    path('check_photo/',verify_selfie, name='verify-selfie'),
+    path('release_sim/', release_sim, name='release-sim'),
+    path('get_postpaid_plans/', get_postpaid_plans, name='postpaid-plans'),
     path('heartbeat/', heartbeat, name='heartbeat'),
+    ### dkyc urls
+    path('dkyc_insert/', create_dkyc_record, name='dkyc-post'),
+    path('dkyc_sms_send/', dkyc_send_otp, name='dkyc-otp-send'),
+    path('dkyc_otp_verify/', dkyc_verify_otp,name='dkyc-otp-verify'),
+    path('dkyc_otp_resend/', dkyc_resend_otp,name='dkyc-otp-resend'),
+    ### sim upg
+    path('sim_upg_otp/', upgradation_send_otp, name='sim-upg-otp'),
+    path('sim_upg_otp_verify/', upgradation_verify_otp, name='sim-upg-otp-verify'),
+    path('sim_upg_otp_resend/', upgradation_resend_otp, name='sim-upg-otp-resend'),
+    ######## mobile no dedup
+    path('cafcheck/', check_gsm_caf , name='check-gsm-caf'),
+    
+    path('checkadh/', check_aadhaar_onboarding , name='check-adhaar'),
+    ########### gsm no search 
+    
+    path('filter_gsmno/', search_gsm_numbers , name='filter-gsmno'),
 
+    ####### gsm no reservation
+    path('reserve_gsmno/', reserve_gsm_number , name='reserve-gsmno'),
+    path('reserve_gsmno_list/', get_reserved_gsm_numbers , name='get-reserveno-list'),
+    ############ sim upgrade
+    path('get_customer_info/', get_customer_info , name='get-customer-info'),
+    path('sim_upgrade/', create_sim_upgrade_request , name='sim-upgrade'),
+    path('get_sim_upgrade_options/', get_app_upgrade_options, name='get-sim-upgrade-options'),
+    path('sim_upgrade_report/', list_sim_upgrade_requests, name='list-sim-upgrade-requests'),
+    
+    ############ esim
+    path('esim_test/', get_esim_by_simnumber, name='test_esim'),
+
+    path('get_prepaid_test/', get_prepaid_test, name='get-prepaid-test'),
 
     
 

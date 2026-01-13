@@ -61,7 +61,7 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': 'VS6m_t%UCCh;bmJn_}5D.q9]0k[(3&b/(?F%DaPnxBA27BJ3EyMkfQH?pH4&}L_J',  # Use same as SECRET_KEY or environment variable
+    'SIGNING_KEY': 'VS6m_t%UCCh;bmJn_}5D.q9]0k[(3&b/(?F%DaPnxBA27BJ3EyMkfQH?pH4&}K_K',  # Use same as SECRET_KEY or environment variable
 }
 
 TIME_ZONE = 'Asia/Kolkata'
@@ -142,6 +142,15 @@ DATABASES = {
         #         'timeout': 30,     # Seconds to wait before raising error
         #     }
         # }
+    },
+
+    'read': {    # Your legacy Postgres DB
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME_READ', 'read_db'),
+        'USER': os.getenv('DB_USER_READ', 'read_user'),
+        'PASSWORD': os.getenv('DB_PASSWORD_READ', 'read_pass'),
+        'HOST': os.getenv('DB_HOST_READ', 'localhost'),
+        'PORT': os.getenv('DB_PORT_READ', '5433'),  # keep as string
     }
 }
 DATABASE_ROUTERS = ['core.db_router.LegacyRouter']

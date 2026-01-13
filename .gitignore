@@ -62,6 +62,6 @@ Thumbs.db
 .mypy_cache/
 .pyre/
 .pytype/
-
+**/certs/
 # VSCode Python extensions
 .python-version

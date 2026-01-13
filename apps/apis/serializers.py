@@ -32,3 +32,6 @@ class CosBcdSerializer(serializers.ModelSerializer):
     class Meta:
         model = CosBcd
         fields = '__all__'
+
+class KycImageSerializer(serializers.Serializer):
+    image_base64 = serializers.CharField()

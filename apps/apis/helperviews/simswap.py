@@ -6,8 +6,12 @@ from datetime import datetime
 
 def simswap_save(request, caf_id, ctopupno, actual_ip,mobileno):
 
+    if "simswap_details" in request.data:
+        simswap = request.data.get("simswap_details", {})
+    elif "dkyc_sim_swap_details" in request.data:
+        simswap = request.data.get("dkyc_sim_swap_details", {}) 
 
-    simswap = request.data.get("simswap_details", {})
+    #simswap = request.data.get("simswap_details", {})
     ss_list = simswap.get("simSwapDetailsFromSS", [])
     ss = ss_list[0] if isinstance(ss_list, list) and ss_list else {}
 
@@ -16,6 +20,7 @@ def simswap_save(request, caf_id, ctopupno, actual_ip,mobileno):
     # ------------------------------
     fir_photo_base64 = simswap.get("firPhotoBase64")
     swap_reason = simswap.get("swapReason")
+    mpin = simswap.get("mpin")
     
     fir_photo_path = None  # Initialize to None
 
@@ -86,7 +91,7 @@ def simswap_save(request, caf_id, ctopupno, actual_ip,mobileno):
             ss_acc_balance_value = float(ss_acc_balance_value)
         except (ValueError, TypeError):
             ss_acc_balance_value = None
-
+    cir_code_cust=simswap.get("cir_code_pos")
     # ------------------------------
     # Now insert into DB
     # ------------------------------
@@ -131,11 +136,12 @@ def simswap_save(request, caf_id, ctopupno, actual_ip,mobileno):
 
             insert_user=ctopupno,
             ins_user_ip=actual_ip,
-            insert_date=timezone.now()
+            insert_date=timezone.now(),
+            mpin=mpin
         )
 
         obj.save()
         print(f"✓ SIM swap details saved successfully for CAF ID: {caf_id}")
-        return {"status": "success", "message": "SIM swap details saved successfully"}
+        return {"status": "success","circle_code_cust":cir_code_cust, "message": "SIM swap details saved successfully"}
     except Exception as e:
         return {"status": "error", "message": f"Database error: {str(e)}"}

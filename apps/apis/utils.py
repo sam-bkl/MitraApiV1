@@ -45,3 +45,14 @@ def insert_sim_allotment(aadhaar, gsm_no, circle_code):
         circle_code=circle_code,
         created_at=timezone.now()
     )
+
+def get_client_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    xri = request.META.get("HTTP_X_REAL_IP")
+    ra = request.META.get("REMOTE_ADDR")
+
+    if xff:
+        return xff.split(",")[0].strip()
+    if xri:
+        return xri
+    return ra

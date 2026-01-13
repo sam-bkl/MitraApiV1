@@ -6,7 +6,7 @@ def get_pg_conn():
         database="postgres",
         user="postgres",
         password="1tc3llKL",
-        host="10.201.222.65",
+        host="10.201.222.77",
         port=5432
     )
 

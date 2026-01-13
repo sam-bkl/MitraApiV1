@@ -32,6 +32,8 @@ class CtopMaster(models.Model):
     swap_allowed = models.CharField(max_length=2, null=True)
     swap_allowed_time = models.DateTimeField(null=True)
     swap_allowed_user  = models.CharField(max_length=100, null=True)
+    start_date = models.DateTimeField(null=True)
+    end_date = models.DateTimeField(null=True)
 
     class Meta:
         managed = False
@@ -71,6 +73,28 @@ class Simprepaid(models.Model):
         db_table = 'simprepaid'   # schema + table in lowercase
         app_label= 'apis'
 
+class SimprepaidSold(models.Model):
+    simno = models.CharField(max_length=20, db_column='simno', primary_key=True)
+    pukno1 = models.CharField(max_length=15, db_column='pukno1', null=True)
+    pukno2 = models.CharField(max_length=15, db_column='pukno2', null=True)
+    pin1 = models.CharField(max_length=15, db_column='pin1', null=True)
+    pin2 = models.CharField(max_length=15, db_column='pin2', null=True)
+    location = models.CharField(max_length=50, db_column='location', null=True)
+    status = models.IntegerField(db_column='status', null=True)
+    issuedate = models.DateTimeField(db_column='issuedate', null=True)
+    vendor_code = models.IntegerField(db_column='vendor_code', null=True)
+    circle_code = models.IntegerField(db_column='circle_code', null=True)
+    circle = models.CharField(max_length=3, db_column='circle', null=True)
+    product_code = models.IntegerField(db_column='product_code', null=True)
+    imsi = models.BigIntegerField(db_column='imsi', null=True)
+    plan_code = models.IntegerField(db_column='plan_code', null=True)
+    changed_date = models.DateTimeField(db_column='changed_date', null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'simprepaid_sold'   # schema + table in lowercase
+        app_label= 'apis'
+
 class Simpostpaid(models.Model):
     simno = models.CharField(max_length=19, db_column='simno', primary_key=True)
     pukno1 = models.CharField(max_length=15, db_column='pukno1', null=True)
@@ -93,6 +117,28 @@ class Simpostpaid(models.Model):
         db_table = 'simpostpaid'   # lowercase table name
         app_label= 'apis'
 
+class SimpostpaidSold(models.Model):
+    simno = models.CharField(max_length=19, db_column='simno', primary_key=True)
+    pukno1 = models.CharField(max_length=15, db_column='pukno1', null=True)
+    pukno2 = models.CharField(max_length=15, db_column='pukno2', null=True)
+    pin1 = models.CharField(max_length=10, db_column='pin1', null=True)
+    pin2 = models.CharField(max_length=10, db_column='pin2', null=True)
+    location = models.CharField(max_length=50, db_column='location', null=True)
+    status = models.IntegerField(db_column='status', null=True)
+    issuedate = models.DateTimeField(db_column='issuedate', null=True)
+    vendor_code = models.IntegerField(db_column='vendor_code', null=True)
+    circle_code = models.IntegerField(db_column='circle_code', null=True)
+    circle = models.CharField(max_length=3, db_column='circle', null=True)
+    product_code = models.IntegerField(db_column='product_code', null=True)
+    imsi = models.BigIntegerField(db_column='imsi', null=True)
+    plancode = models.IntegerField(db_column='plancode', null=True)
+    changed_date = models.DateTimeField(db_column='changed_date', null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'simpostpaid_sold'   # lowercase table name
+        app_label= 'apis'
+
 class GsmChoice(models.Model):
     gsmno = models.CharField(max_length=10, db_column='gsmno', primary_key=True)
     pin = models.CharField(max_length=10, db_column='pin', null=True)
@@ -106,10 +152,41 @@ class GsmChoice(models.Model):
     remarks = models.CharField(max_length=30, db_column='remarks', null=True)
     ipaddress = models.CharField(max_length=20, db_column='ipaddress', null=True)
     user_agent = models.CharField(max_length=300, db_column='user_agent', null=True)
+    reserve_start_date = models.DateTimeField(null=True)
+    reserve_end_date = models.DateTimeField(null=True)
+    reserve_username = models.CharField(max_length=20, null=True)
+    reserve_ctopnumber = models.CharField(max_length=20, null=True)
+    digit_sum = models.IntegerField(editable=False)
+    lucky_number = models.IntegerField(editable=False)
 
     class Meta:
         managed = False
         db_table = 'gsm_choice'  # lowercase table name
+        app_label= 'apis'
+
+class GsmChoiceSold(models.Model):
+    gsmno = models.CharField(max_length=10, db_column='gsmno', primary_key=True)
+    pin = models.CharField(max_length=10, db_column='pin', null=True)
+    mobileno = models.CharField(max_length=10, db_column='mobileno', null=True)
+    status = models.IntegerField(db_column='status', null=True)
+    csccode = models.CharField(max_length=20, db_column='csccode', null=True)
+    ssa_code = models.CharField(max_length=20, db_column='ssa_code', null=True)
+    circle_code = models.IntegerField(db_column='circle_code', null=True)
+    trans_date = models.DateTimeField(db_column='trans_date', null=True)
+    data_entry_date = models.DateTimeField(db_column='data_entry_date', null=True)
+    remarks = models.CharField(max_length=30, db_column='remarks', null=True)
+    ipaddress = models.CharField(max_length=20, db_column='ipaddress', null=True)
+    user_agent = models.CharField(max_length=300, db_column='user_agent', null=True)
+    reserve_start_date = models.DateTimeField(null=True)
+    reserve_end_date = models.DateTimeField(null=True)
+    reserve_username = models.CharField(max_length=20, null=True)
+    reserve_ctopnumber = models.CharField(max_length=20, null=True)
+    digit_sum = models.IntegerField()
+    lucky_number = models.IntegerField()
+
+    class Meta:
+        managed = False
+        db_table = 'gsm_choice_sold'  # lowercase table name
         app_label= 'apis'
 
 class ApiOtpTable(models.Model):
@@ -131,6 +208,15 @@ class RefOtpTable(models.Model):
         db_table = 'ref_otp_table'
         app_label= 'apis'
 
+class UpgradationOtpTable(models.Model):
+    gsmnno = models.CharField(max_length=15)
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        managed = False
+        db_table = 'upgradation_otp_table'
+        app_label= 'apis'
+
 
 class AppVersion(models.Model):
     id = models.AutoField(primary_key=True)  # Required internal PK
@@ -150,8 +236,8 @@ class CosBcd(models.Model):
     de_username = models.CharField(max_length=150, null=True)
     dateallottment = models.DateTimeField(null=True)
     gsmnumber = models.CharField(max_length=150,null=True)
-    simnumber = models.CharField(max_length=150,primary_key=True)
-    caf_serial_no = models.CharField(max_length=30, null=True)
+    simnumber = models.CharField(max_length=150)
+    caf_serial_no = models.CharField(max_length=30,primary_key=True)
     connection_type = models.IntegerField(null=True)
     name = models.CharField(max_length=150, null=True)
     middle_name = models.CharField(max_length=150, null=True)
@@ -340,6 +426,7 @@ class CosBcd(models.Model):
     device_ip = models.CharField(max_length=30, null=True)
     device_mac = models.CharField(max_length=50, null=True)
     verified_flag = models.CharField(max_length=150, null=True)
+    verified_date = models.DateTimeField(null=True)
     latitude = models.CharField(max_length=50, null=True)
     longitude = models.CharField(max_length=50, null=True)
     app_version = models.CharField(max_length=10, null=True)
@@ -363,6 +450,13 @@ class CosBcd(models.Model):
     frc_ctopup_number_mpin = models.CharField(max_length=10, null=True, blank=True)
     father_name_adh = models.CharField(max_length=150, null=True, blank=True)
     parent_ctopup_number = models.CharField(max_length=20, null=True, blank=True)
+    std_isd = models.CharField(max_length=10, null=True, blank=True)
+    deposit_required = models.CharField(max_length=5, null=True, blank=True)
+    no_deposit_reason = models.CharField(max_length=100, null=True, blank=True)
+    postpaid_plan_name = models.CharField(max_length=255, null=True, blank=True)
+    payment_method = models.CharField(max_length=50, null=True, blank=True)
+    amount_received = models.CharField(max_length=20, null=True, blank=True)
+    pwd_per_disability = models.CharField(max_length=200, null=True, blank=True)
 
     class Meta:
         managed = False
@@ -399,7 +493,6 @@ class FrcPlan(models.Model):
         managed = False
         db_table = "frc_plan_table"
 
-from django.db import models
 
 
 class CafSimSwapDetails(models.Model):
@@ -451,10 +544,63 @@ class CafSimSwapDetails(models.Model):
     insert_user = models.CharField(max_length=50, db_column='insert_user', null=True, blank=True)
     ins_user_ip = models.CharField(max_length=50, db_column='ins_user_ip', null=True, blank=True)
     insert_date = models.DateTimeField(db_column='insert_date', null=True, blank=True)
+    mpin = models.CharField(max_length=50, db_column='mpin', null=True, blank=True)
 
     class Meta:
         managed = False
         db_table = 'caf_sim_swap_details'
+
+
+class PostpaidPlansApp(models.Model):
+    plan_id = models.IntegerField(primary_key=True)
+
+    plan_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
+
+    plan_group = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True
+    )
+
+    market_value = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True
+    )
+
+    plan_charge = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
+    activation_charges = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
+    circle_code = models.IntegerField(
+        null=True,
+        blank=True
+    )
+
+    zone_code = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        db_table = "postpaid_plans_app"
+        app_label= 'apis'
+        managed = False   # IMPORTANT: table already exists
 
 
 
