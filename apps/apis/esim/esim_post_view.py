@@ -204,18 +204,37 @@ def reserve_esim(circle_code):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def update_caf_details(request):
+def update_caf_details_esim(request):
     """
     Update CAF (Customer Application Form) details
     
     Fully atomic transaction with proper error handling and validation
     No partial updates - all or nothing
     """
-    
+
     # =====================================================
     # 1️⃣ VALIDATION & DESERIALIZATION
     # =====================================================
     serializer = UpdateCAFDetailsSerializer(data=request.data)
+
+    # if not serializer.is_valid():
+
+    # # 🔴 LOG VALIDATION ERROR HERE
+    #     with open("/home/bsnlcos/apis/logs/serializer_errors.txt", "a") as f:
+    #         f.write(
+    #             f"\n[{timezone.now()}] UpdateCAFDetailsSerializer ERROR\n"
+    #             f"errors: {serializer.errors}\n"
+    #             f"payload: {request.data}\n"
+    #         )
+
+    #     return Response(
+    #         {
+    #             "status": "error",
+    #             "message": "Validation failed",
+    #             "errors": serializer.errors
+    #         },
+    #         status=400
+    #     )
     if not serializer.is_valid():
         return Response(
             {
@@ -284,7 +303,7 @@ def update_caf_details(request):
     # 4️⃣ ATOMIC TRANSACTION BLOCK
     # =====================================================
     try:
-        with transaction.atomic():
+        with transaction.atomic(using="legacy"):
             
             # Generate CAF ID
             caf_no = create_cafid.get_caf_id()
@@ -316,6 +335,7 @@ def update_caf_details(request):
             # Parse data
             poi_data = extract_poi_data(data.get('Poi', {}))
             poa_data = extract_poa_data(data.get('Poa', {}))
+
             local_ref = data.get('outstation_reference', {})
             postpaid_details = data.get('postpaid_details', {})
             frc_details = data.get('frc_details', {})
@@ -324,10 +344,14 @@ def update_caf_details(request):
 
             # Determine connection type code
             connection_type_code = 2 if data['connection_type'] == 'postpaid' else 1
-
+            esim_obj = reserve_esim(circle_code)
+            
+                
+            simno = esim_obj.simno
             # Determine SIM type
-            sim_type = determine_sim_type(data['simno'], connection_type_code)
-
+            #sim_type = determine_sim_type(data['simno'], connection_type_code)
+            #sim_type = determine_sim_type(simno, connection_type_code)
+            sim_type = 3
             # Create CosBcd record using builder pattern
             builder = CosBcdBuilder(caf_no)
             
@@ -337,19 +361,21 @@ def update_caf_details(request):
                 de_username=data.get('ctopup_username') or data.get('ctopup_number'),
                 parent_ctopup_number=data.get('ctopup_number'),
                 gsmnumber=data['mobileno'],
-                simnumber=data['simno'],
+                simnumber=simno,
                 ssa_code=data.get('ssa_code'),
                 simstate=simstate,
                 connection_type=connection_type_code,
                 caf_type=data['caf_type'],
                 circle_code=circle_code,
                 sim_type=sim_type,
+                customer_type = data.get('customer_type') or "Individual",
                 pwd=data.get('pwd'),
                 pwd_per_disability=data.get('pwd_per_disability'),
                 app_version=data.get('app_version'),
                 device_ip=actual_ip,
                 device_mac=data.get('device_mac'),
-                live_photo_time=timezone.now()
+                live_photo_time=timezone.now(),
+                pos_aadhaar = data.get('pos_aadhaar')
             )
             
             # POI (Point of Identity) data
@@ -477,15 +503,14 @@ def update_caf_details(request):
                 raise DatabaseError("CAF insert verification failed")
 
             # Update inventory (SIM + GSM)
-            try:
-                update_inventory_atomic(
-                    simno=data['simno'],
-                    gsmno=data['mobileno'],
-                    connection_type=connection_type_code,
-                    plan=data['caf_type']
-                )
-            except ValidationError as inv_error:
-                raise ValidationError(f"Inventory update failed: {str(inv_error)}")
+
+            update_inventory_atomic(
+                simno=simno,
+                gsmno=data['mobileno'],
+                connection_type=connection_type_code,
+                plan=data['caf_type'],sim_mode='esim'
+            )
+
 
             # Record allotment
             insert_sim_allotment(customer_aadhaar, data['mobileno'], circle_code)
@@ -494,7 +519,7 @@ def update_caf_details(request):
         return Response(
             {
                 "status": "error",
-                "message": str(e),
+                "message": str(e.message),
                 "type": "validation_error"
             },
             status=status.HTTP_400_BAD_REQUEST
@@ -513,8 +538,8 @@ def update_caf_details(request):
             {
                 "status": "error",
                 "message": "An unexpected error occurred",
-                "type": "server_error",
-                "detail": str(e) if request.user.is_staff else None
+                "type": "server_error"
+                
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
@@ -528,10 +553,10 @@ def update_caf_details(request):
         "data": {
             "caf_id": caf_no,
             "mobileno": data['mobileno'],
-            "simnumber": data['simno'],
+            "simnumber": simno,
             "connection_type": data['connection_type'],
             "caf_type": data['caf_type'],
             "timestamp": timezone.now().isoformat(),
-            "images_saved": bool(saved_paths)
+            
         }
     }, status=status.HTTP_200_OK)

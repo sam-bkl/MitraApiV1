@@ -457,6 +457,7 @@ class CosBcd(models.Model):
     payment_method = models.CharField(max_length=50, null=True, blank=True)
     amount_received = models.CharField(max_length=20, null=True, blank=True)
     pwd_per_disability = models.CharField(max_length=200, null=True, blank=True)
+    pos_aadhaar = models.CharField(max_length=25, null=True, blank=True)
 
     class Meta:
         managed = False
@@ -602,5 +603,16 @@ class PostpaidPlansApp(models.Model):
         app_label= 'apis'
         managed = False   # IMPORTANT: table already exists
 
+
+class AppOtaUpdate(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
+    ota_update = models.JSONField()
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False              
+        db_table = "app_ota_update"
+        app_label = "apis"            
 
 

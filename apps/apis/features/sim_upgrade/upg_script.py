@@ -1,9 +1,21 @@
 import psycopg2
 import oracledb
-from typing import Dict, List, Optional, Any, Union
-import json
+from typing import Dict, List, Optional, Any, Callable
+import json,os
 from datetime import datetime
 
+import sys
+# ADD PROJECT ROOT TO PYTHONPATH
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).resolve().parents[4]  # Go up 4 levels to reach /apis
+sys.path.insert(0, str(project_root))
+import django
+# Setup Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+django.setup()
+from django.conf import settings
 
 def transfer_data(
     pg_config: Dict[str, str],
@@ -19,38 +31,28 @@ def transfer_data(
 ) -> int:
     """
     Transfer data from PostgreSQL to Oracle with support for fixed values, duplicate mappings,
-    and tracking to prevent duplicate transfers.
+    data transformation, and tracking to prevent duplicate transfers.
     
     Args:
         pg_config: PostgreSQL connection config 
-                   {'host': '...', 'port': 5432, 'database': '...', 'user': '...', 'password': '...'}
         oracle_config: Oracle connection config
-                       {'user': '...', 'password': '...', 'dsn': '...'}
         pg_table: Source table name in PostgreSQL
         oracle_table: Target table name in Oracle
         column_mapping: List of column mapping dicts. Each dict has:
                         - 'oracle_column': Target Oracle column name (required)
-                        - 'pg_column': Source PostgreSQL column (optional, if fetching from PG)
-                        - 'fixed_value': Fixed value to insert (optional, for constants)
+                        - 'pg_column': Source PostgreSQL column (optional)
+                        - 'fixed_value': Fixed value to insert (optional)
                         - 'function': Special function like 'CURRENT_TIMESTAMP' (optional)
-        batch_size: Number of rows to insert per batch (default 1000)
-        where_clause: Optional WHERE clause for filtering PG data (without 'WHERE' keyword)
-        tracking_flag_column: PostgreSQL column name for tracking flag (default 'oif')
-        tracking_timestamp_column: PostgreSQL column name for timestamp (default 'ora_ins_time')
-        primary_key_columns: List of primary key columns for UPDATE tracking (optional)
+                        - 'max_length': Maximum length to truncate to (optional)
+                        - 'transform': Custom transformation function (optional)
+        batch_size: Number of rows to insert per batch
+        where_clause: Optional WHERE clause for filtering PG data
+        tracking_flag_column: PostgreSQL column name for tracking flag
+        tracking_timestamp_column: PostgreSQL column name for timestamp
+        primary_key_columns: List of primary key columns for UPDATE tracking
     
     Returns:
         Number of rows transferred
-        
-    Example column_mapping:
-        [
-            {'oracle_column': 'CSCCODE', 'pg_column': 'parent_ctop_number'},
-            {'oracle_column': 'NAME', 'pg_column': 'bill_fname'},
-            {'oracle_column': 'PERM_ADDR_HNO', 'pg_column': 'bill_address1'},  # Duplicate mapping
-            {'oracle_column': 'LOCAL_ADDR_HNO', 'pg_column': 'bill_address1'},  # Same PG column
-            {'oracle_column': 'STATUS', 'fixed_value': 'ACTIVE'},  # Fixed value
-            {'oracle_column': 'PROCESS_DATE', 'function': 'CURRENT_TIMESTAMP'}  # Oracle function
-        ]
     """
     pg_conn = None
     oracle_conn = None
@@ -67,7 +69,7 @@ def transfer_data(
         
         # Separate PG columns to fetch (unique set) and build mapping indices
         pg_columns_to_fetch = []
-        pg_column_indices = {}  # Maps pg_column -> index in SELECT
+        pg_column_indices = {}
         
         # Add primary key columns for tracking updates
         if primary_key_columns:
@@ -82,7 +84,7 @@ def transfer_data(
                 pg_column_indices[pg_col] = len(pg_columns_to_fetch)
                 pg_columns_to_fetch.append(pg_col)
         
-        # Build SELECT query for PostgreSQL - only fetch unprocessed records
+        # Build SELECT query for PostgreSQL
         if not pg_columns_to_fetch:
             raise ValueError("No PostgreSQL columns specified to fetch")
         
@@ -110,24 +112,23 @@ def transfer_data(
         else:
             update_query = None
             print("WARNING: No primary_key_columns provided. Tracking updates will be skipped.")
-        pg_cursor.execute(select_query)
         
         # Build INSERT query for Oracle
         oracle_columns = [m['oracle_column'] for m in column_mapping]
         
         # Build VALUES clause with placeholders and functions
         values_parts = []
-        bind_positions = []  # Track which mappings need bind variables
+        bind_positions = []
         
         for i, mapping in enumerate(column_mapping):
             if 'function' in mapping:
                 values_parts.append(mapping['function'])
             elif 'fixed_value' in mapping:
                 values_parts.append(f':{i+1}')
-                bind_positions.append(('fixed', mapping['fixed_value']))
+                bind_positions.append(('fixed', mapping['fixed_value'], mapping))
             elif 'pg_column' in mapping:
                 values_parts.append(f':{i+1}')
-                bind_positions.append(('pg', pg_column_indices[mapping['pg_column']]))
+                bind_positions.append(('pg', pg_column_indices[mapping['pg_column']], mapping))
             else:
                 raise ValueError(f"Invalid mapping for Oracle column {mapping['oracle_column']}")
         
@@ -143,15 +144,28 @@ def transfer_data(
             
             # Transform PG rows to Oracle rows based on mapping
             oracle_rows = []
-            pk_values_batch = []  # Store PK values for tracking update
+            pk_values_batch = []
             
             for pg_row in pg_rows:
                 oracle_row = []
-                for bind_type, bind_info in bind_positions:
+                for bind_type, bind_info, mapping in bind_positions:
                     if bind_type == 'fixed':
-                        oracle_row.append(bind_info)
+                        value = bind_info
                     elif bind_type == 'pg':
-                        oracle_row.append(pg_row[bind_info])
+                        value = pg_row[bind_info]
+                    
+                    # Apply transformations
+                    if value is not None:
+                        # Apply max_length truncation
+                        if 'max_length' in mapping and isinstance(value, str):
+                            value = value[:mapping['max_length']]
+                        
+                        # Apply custom transformation
+                        if 'transform' in mapping:
+                            value = mapping['transform'](value)
+                    
+                    oracle_row.append(value)
+                
                 oracle_rows.append(oracle_row)
                 
                 # Extract primary key values for tracking update
@@ -189,80 +203,64 @@ def transfer_data(
 
 # Example usage
 if __name__ == "__main__":
-    # Connection configurations
+    db_config = settings.DATABASES['legacy']  # or 'read' or 'default'
     pg_config = {
-        'host': '10.201.222.77',
-        'port': 5432,
-        'database': 'postgres',
-        'user': 'postgres',
-        'password': '1tc3llKL'
+        'host': db_config['HOST'],
+        'port': int(db_config['PORT']),
+        'database': db_config['NAME'],
+        'user': db_config['USER'],
+        'password': db_config['PASSWORD'],
     }
+
+    # Get Oracle config from settings
+    oracle_config = settings.ORACLE_CONFIG
     
-    oracle_config = {
-        'user': 'APPUSER1',
-        'password': 'W7b5NpQ8Z',
-        'dsn': '10.201.222.66:1521/ecaf'
-    }
-    
-    # Column mapping with fixed values and duplicate mappings
+    # Column mapping with max_length constraints
     column_mapping = [
-        # =========================
         # Core identifiers
-        # =========================
-        {'oracle_column': 'CSCCODE', 'pg_column': 'csc_code'},
-        {'oracle_column': 'GSMNUMBER', 'pg_column': 'mobile_number'},
-        {'oracle_column': 'PRESENT_IMSI', 'pg_column': 'imsi_old'},
-        {'oracle_column': 'NEW_IMSI', 'pg_column': 'imsi'},
+        {'oracle_column': 'CSCCODE', 'pg_column': 'csc_code', 'max_length': 30},
+        {'oracle_column': 'GSMNUMBER', 'pg_column': 'mobile_number', 'max_length': 10},
+        {'oracle_column': 'PRESENT_IMSI', 'pg_column': 'imsi_old', 'max_length': 15},
+        {'oracle_column': 'NEW_IMSI', 'pg_column': 'imsi', 'max_length': 15},
         {'oracle_column': 'CONNECTION_TYPE', 'pg_column': 'connection_type'},
-        # =========================
+        
         # SIM / IMSI
-        # =========================
-        {'oracle_column': 'NEW_SIM', 'pg_column': 'sim_number'},
-        {'oracle_column': 'OLD_SIM', 'pg_column': 'ss_simnumber'},
-        # =========================
+        {'oracle_column': 'NEW_SIM', 'pg_column': 'sim_number', 'max_length': 20},
+        {'oracle_column': 'OLD_SIM', 'pg_column': 'ss_simnumber', 'max_length': 20},
+        
         # Customer Name
-        # =========================
-        {'oracle_column': 'NAME', 'pg_column': 'bill_fname'},
-        # =========================
-        # Local Address
-        # =========================
-        {'oracle_column': 'LOCAL_ADDR_HNO', 'pg_column': 'bill_address1'},
-        {'oracle_column': 'LOCAL_ADDR_STREET', 'pg_column': 'bill_address2'},
-        {'oracle_column': 'LOCAL_ADDR_LOCALITY', 'pg_column': 'bill_address3'},
-        {'oracle_column': 'LOCAL_ADDR_CITY', 'pg_column': 'bill_city'},
-        {'oracle_column': 'LOCAL_ADDR_STATE', 'pg_column': 'bill_state'},
+        {'oracle_column': 'NAME', 'pg_column': 'bill_fname', 'max_length': 150},
+        
+        # Local Address - WITH TRUNCATION
+        {'oracle_column': 'LOCAL_ADDR_HNO', 'pg_column': 'bill_address1', 'max_length': 100},
+        {'oracle_column': 'LOCAL_ADDR_STREET', 'pg_column': 'bill_address2', 'max_length': 100},
+        {'oracle_column': 'LOCAL_ADDR_LOCALITY', 'pg_column': 'bill_address3', 'max_length': 100},
+        {'oracle_column': 'LOCAL_ADDR_CITY', 'pg_column': 'bill_city', 'max_length': 50},
+        {'oracle_column': 'LOCAL_ADDR_STATE', 'pg_column': 'bill_state', 'max_length': 50},
         {'oracle_column': 'LOCAL_ADDR_PIN', 'pg_column': 'bill_zip'},
-        # =========================
-        # Permanent Address (SAME AS BILLING - duplicate mapping)
-        # =========================
-        {'oracle_column': 'PERM_ADDR_HNO', 'pg_column': 'bill_address1'},
-        {'oracle_column': 'PERM_ADDR_STREET', 'pg_column': 'bill_address2'},
-        {'oracle_column': 'PERM_ADDR_LOCALITY', 'pg_column': 'bill_address3'},
-        {'oracle_column': 'PERM_ADDR_CITY', 'pg_column': 'bill_city'},
-        {'oracle_column': 'PERM_ADDR_STATE', 'pg_column': 'bill_state'},
+        
+        # Permanent Address - WITH TRUNCATION
+        {'oracle_column': 'PERM_ADDR_HNO', 'pg_column': 'bill_address1', 'max_length': 100},
+        {'oracle_column': 'PERM_ADDR_STREET', 'pg_column': 'bill_address2', 'max_length': 100},
+        {'oracle_column': 'PERM_ADDR_LOCALITY', 'pg_column': 'bill_address3', 'max_length': 100},
+        {'oracle_column': 'PERM_ADDR_CITY', 'pg_column': 'bill_city', 'max_length': 50},
+        {'oracle_column': 'PERM_ADDR_STATE', 'pg_column': 'bill_state', 'max_length': 50},
         {'oracle_column': 'PERM_ADDR_PIN', 'pg_column': 'bill_zip'},
         {'oracle_column': 'ALTERNATE_CONTACT_NO', 'pg_column': 'alternate_mobile_number'},
-        # =========================
+        
         # Remarks
-        # =========================
-        {'oracle_column': 'SWAP_REMARKS', 'fixed_value': '4gupgrade'},
-        # =========================
+        {'oracle_column': 'SWAP_REMARKS', 'fixed_value': '4gupgrade', 'max_length': 100},
+        
         # Audit / Approval
-        # =========================
-        {'oracle_column': 'INS_USR', 'pg_column': 'insert_user'},
+        {'oracle_column': 'INS_USR', 'pg_column': 'insert_user', 'max_length': 30},
         {'oracle_column': 'INS_DATE', 'pg_column': 'insert_date'},
         {'oracle_column': 'CIRCLE_CODE', 'pg_column': 'cust_circle_code'},
-        {'oracle_column': 'ACT_TYPE', 'pg_column': 'activation_type'},
-        # =========================
-        # Fixed values
-        # =========================
-        {'oracle_column': 'ACTIVATION_STATUS', 'fixed_value': 'AI'},
+        {'oracle_column': 'ACT_TYPE', 'pg_column': 'activation_type', 'max_length': 25},
         
-        # =========================
-        # Oracle functions (current timestamp)
-        # =========================
-       
+        # Fixed values
+        {'oracle_column': 'ACTIVATION_STATUS', 'fixed_value': 'AI'},
     ]
+    
     # Transfer data
     try:
         rows_transferred = transfer_data(
@@ -272,10 +270,9 @@ if __name__ == "__main__":
             oracle_table='CAF_ADMIN.SIM_SWAP_DATA',
             column_mapping=column_mapping,
             batch_size=1000,
-            #where_clause="sim_type='1'",  # Optional additional filter
-            tracking_flag_column='oif',  # Column that tracks if row is copied (default '0')
-            tracking_timestamp_column='ora_ins_time',  # Column to store copy timestamp
-            primary_key_columns=['parent_ctop_number', 'mobile_number']  # PK columns for tracking
+            tracking_flag_column='oif',
+            tracking_timestamp_column='ora_ins_time',
+            primary_key_columns=['parent_ctop_number', 'mobile_number']
         )
         print(f"Successfully transferred {rows_transferred} rows")
     except Exception as e:

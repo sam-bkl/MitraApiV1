@@ -7,15 +7,16 @@ from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-
+from django.conf import settings
 import oracledb
 
 def get_oracle_conn():
-    return oracledb.connect(
-        user="APPUSER1",
-        password="W7b5NpQ8Z",
-        dsn="10.201.222.66:1521/ecaf"
-    )
+    return oracledb.connect(**settings.ORACLE_CONFIG)
+    # return oracledb.connect(
+    #     user="APPUSER1",
+    #     password="W7b5NpQ8Z",
+    #     dsn="10.201.222.66:1521/ecaf"
+    # )
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -127,7 +128,8 @@ def edit_mnp(request):
                     SET UPC_CODE = :upc,
                         ACTIVATION_STATUS = 'AI',
                         ACTIVATION_REMARKS  = NULL,
-                        BILLING_STATUS      = NULL
+                        BILLING_STATUS      = NULL,
+                        STATUS = NULL
                     WHERE GSMNUMBER = :gsm
                       AND CAF_SERIAL_NO = :caf
                       AND ACTIVATION_STATUS = 'R'

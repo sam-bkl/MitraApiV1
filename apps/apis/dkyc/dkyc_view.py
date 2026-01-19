@@ -21,6 +21,11 @@ import json
 from django.conf import settings
 from datetime import datetime
 from ..send_sms import dkyc_send_sms
+from django.db.models import Q
+
+from apps.apis.dkyc.dkyc_models import BulkBusinessGroups,CompanyInformations,BulkConnectionDetails
+from apps.apis.dkyc.dekyc_serializers import BulkBusinessSearchInputSerializer,BulkBusinessSearchOutputSerializer,BusinessGroupDetailInputSerializer,BusinessGroupDetailSerializer
+
 
 def dump_request_to_text(request, tag="dkyc"):
     try:
@@ -416,4 +421,161 @@ def dkyc_resend_otp(request):
             "otp_type": otp_type
         },
         status=status.HTTP_200_OK
+    )
+
+
+################################################################################################################
+##########################################CUG Search ###########################################################
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def search_bulk_business_groups(request):
+    """
+    Secure search API for bulk business groups
+    
+    """
+
+    # -----------------------------
+    # 1. Validate input
+    # -----------------------------
+    serializer = BulkBusinessSearchInputSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # ✅ THESE LINES YOU ASKED ABOUT
+    search_text = serializer.validated_data["search_text"]
+    circle_code = serializer.validated_data.get("circle_code")
+
+
+    # -----------------------------
+    # 2. ORM query (SAFE)
+    # -----------------------------
+    queryset = (
+    BulkBusinessGroups.objects
+    .filter(
+        status="Approved",
+        circle_code = circle_code
+    )
+    .filter(
+        Q(reference_number__icontains= search_text ) |
+        Q(companyinformations__company_name__icontains= search_text)
+    )
+    .values(
+        "business_group_id",
+        "reference_number",
+        "companyinformations__company_name",
+        "companyinformations__registered_address1",
+        "companyinformations__registered_district",
+    )
+    .distinct()
+    )
+
+    # -----------------------------
+    # 3. Normalize keys for output
+    # -----------------------------
+    results = [
+    {
+        "business_group_id": row["business_group_id"],
+        "reference_number": row["reference_number"],
+        "company_name": row["companyinformations__company_name"],
+        "registered_address1": row["companyinformations__registered_address1"],
+        "registered_district": row["companyinformations__registered_district"],
+    }
+    for row in queryset
+    ]
+
+    output_serializer = BulkBusinessSearchOutputSerializer(results, many=True)
+
+    return Response(
+        {
+            "status": "success",
+            "count": len(output_serializer.data),
+            "data": output_serializer.data
+        },
+        status=200
+    )
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def get_business_group_details(request):
+    """
+    Returns:
+    - Business group details
+    - Company information
+    - First 20 GSM + SIM numbers
+    """
+
+    # ---------------------------
+    # 1. Validate input
+    # ---------------------------
+    serializer = BusinessGroupDetailInputSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    business_group_id = serializer.validated_data["business_group_id"]
+
+    # ---------------------------
+    # 2. Fetch business group
+    # ---------------------------
+    try:
+        bbg = BulkBusinessGroups.objects.get(
+            business_group_id=business_group_id
+        )
+    except BulkBusinessGroups.DoesNotExist:
+        return Response(
+            {
+                "status": "failure",
+                "message": "Business group not found"
+            },
+            status=404
+        )
+
+    # ---------------------------
+    # 3. Fetch company info
+    # ---------------------------
+    company = (
+        CompanyInformations.objects
+        .filter(business_group_id=business_group_id)
+        .values(
+            "company_name",
+            "registered_address1",
+            "registered_address2",
+            "registered_district",
+            "registered_state",
+            "registered_pin_code"
+        )
+        .first()
+    )
+   
+    # ---------------------------
+    # 4. Fetch first 20 connections
+    # ---------------------------
+    connections = (
+        BulkConnectionDetails.objects
+        .filter(business_group_id=business_group_id)
+        .order_by("serial_no")
+        .values("gsm_number", "sim_number","customer_name","user_name","poi_type","poi_number","poa_type","poa_number","designation")[:20]
+    )
+   
+    # ---------------------------
+    # 5. Build response payload
+    # ---------------------------
+    response_data = {
+        "business_group_id": bbg.business_group_id,
+        "reference_number": bbg.reference_number,
+        "business_group_name": bbg.business_group_name,
+        "business_group_type": bbg.business_group_type,
+        "connection_type": bbg.connection_type,
+        "business_group_size": bbg.business_group_size,
+        "status": bbg.status,
+        "company": company,
+        "connections": list(connections),
+    }
+
+    output = BusinessGroupDetailSerializer(response_data)
+
+    return Response(
+        {
+            "status": "success",
+            "data": output.data
+        },
+        status=200
     )

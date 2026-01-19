@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CtopMaster,Simprepaid, Simpostpaid, GsmChoice, AppVersion, CosBcd
+from .models import CtopMaster,Simprepaid, Simpostpaid, GsmChoice, AppVersion, CosBcd, AppOtaUpdate
 
 class CtopMasterSerializer(serializers.ModelSerializer):
     class Meta:
@@ -35,3 +35,8 @@ class CosBcdSerializer(serializers.ModelSerializer):
 
 class KycImageSerializer(serializers.Serializer):
     image_base64 = serializers.CharField()
+
+class AppOtaUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppOtaUpdate
+        fields = ["ota_update"] 

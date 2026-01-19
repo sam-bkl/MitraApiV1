@@ -31,9 +31,28 @@ class EsimprepaidSerializer(serializers.ModelSerializer):
 
 class POISerializer(serializers.Serializer):
     """Point of Identity validation"""
-    name = serializers.CharField(source='@name', required=True, max_length=150)
-    dob = serializers.CharField(source='@dob', required=False, allow_blank=True)
-    gender = serializers.CharField(source='@gender', required=False, max_length=24)
+    name = serializers.CharField( required=True, max_length=150, error_messages={
+        "required":"this is the issue"
+    })
+    dob = serializers.CharField( required=False, allow_blank=True)
+    gender = serializers.CharField( required=False, max_length=24)
+
+    def to_internal_value(self, data):
+        """
+        Transform @name → name BEFORE validation
+        This runs BEFORE any field validation
+        """
+        # Normalize @ notation to regular names for internal processing
+        normalized = {}
+        for key, value in (data or {}).items():
+            if key.startswith('@'):
+                # @name → name
+                normalized[key] = value
+            else:
+                normalized[key] = value
+        
+        # Call parent to do validation with normalized data
+        return super().to_internal_value(normalized)
 
 class POASerializer(serializers.Serializer):
     """Point of Address validation"""
@@ -47,6 +66,23 @@ class POASerializer(serializers.Serializer):
     dist = serializers.CharField(source='@dist', required=False, max_length=150)
     state = serializers.CharField(source='@state', required=False, max_length=150)
     pc = serializers.CharField(source='@pc', required=False, max_length=10)
+
+    def to_internal_value(self, data):
+        """
+        Transform @name → name BEFORE validation
+        This runs BEFORE any field validation
+        """
+        # Normalize @ notation to regular names for internal processing
+        normalized = {}
+        for key, value in (data or {}).items():
+            if key.startswith('@'):
+                # @name → name
+                normalized[key] = value
+            else:
+                normalized[key] = value
+        
+        # Call parent to do validation with normalized data
+        return super().to_internal_value(normalized)
 
 class MNPDetailsSerializer(serializers.Serializer):
     """MNP specific details"""
@@ -110,10 +146,11 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
     circle_code = serializers.CharField(max_length=10, required=True)
     ctopup_number = serializers.CharField(max_length=50, required=True)
     ssa_code = serializers.CharField(max_length=30, required=True)
-    mobileno = serializers.RegexField(regex=r'^\d{10}$', required=True)
-    simno = serializers.CharField(max_length=150, required=True)
+    mobileno = serializers.CharField(max_length=30, required=True)
+    simno = serializers.CharField(max_length=150, required=False,allow_blank=True)
     connection_type = serializers.ChoiceField(choices=['prepaid', 'postpaid'], required=True)
-    caf_type = serializers.ChoiceField(choices=['normal', 'mnp', 'simswap', 'simupgrade'], required=True)
+    caf_type = serializers.ChoiceField(choices=['cymn', 'mnp', 'simswap', 'simupgrade'], required=True)
+    customer_type = serializers.CharField(max_length=30, required=False) 
     
     # Auth fields
     ctopup_username = serializers.CharField(max_length=150, required=False, allow_blank=True)
@@ -121,9 +158,9 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
     vendorcode = serializers.CharField(max_length=150, required=True)
     
     # Subscriber info
-    Poi = POISerializer(required=True)
-    posPoi = POISerializer(required=False)
-    Poa = POASerializer(required=True)
+    Poi = serializers.JSONField( required=True )
+    posPoi = serializers.JSONField( required=True)
+    Poa = serializers.JSONField( required=True)
     father_husband_name = serializers.CharField(max_length=300, required=False)
     subscriber_type = serializers.CharField(max_length=50, required=False)
     profession = serializers.CharField(max_length=60, required=False, allow_blank=True)
@@ -134,14 +171,13 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
     posPht = serializers.CharField(required=True)  # base64 POS Aadhaar photo
     subscriber_live_photo = serializers.CharField(required=True)  # base64 live photo
     pwd_certificate = serializers.CharField(required=False, allow_blank=True)
-    
+    pos_aadhaar  = serializers.CharField(required=False, allow_blank=True)
     masked_adhar = serializers.CharField(max_length=75, required=False)
     
     # Unique response codes
     cst_unique_code = serializers.CharField(max_length=60, required=False)
     cst_res_timestamp = serializers.DateTimeField(required=False)
     posUid = serializers.DictField(required=False)
-    posPoi = POISerializer(required=False)
     posPoa = serializers.DictField(required=False)
     pos_unique_code = serializers.CharField(max_length=60, required=False)
     pos_res_timestamp = serializers.DateTimeField(required=False)
@@ -177,7 +213,7 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
 
     def validate_caf_type(self, value):
         """Validate CAF type"""
-        valid_types = ['normal', 'mnp', 'simswap', 'simupgrade']
+        valid_types = ['cymn', 'mnp', 'simswap', 'simupgrade']
         if value not in valid_types:
             raise serializers.ValidationError(
                 f"CAF type must be one of {valid_types}, got '{value}'"
@@ -193,26 +229,26 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
             )
         return value
 
-    def validate_mobileno(self, value):
-        """Validate mobile number format"""
-        if not value.isdigit() or len(value) != 10:
-            raise serializers.ValidationError(
-                "Mobile number must be exactly 10 digits"
-            )
-        return value
+    # def validate_mobileno(self, value):
+    #     """Validate mobile number format"""
+    #     if not value.isdigit() or len(value) != 10:
+    #         raise serializers.ValidationError(
+    #             "Mobile number must be exactly 10 digits"
+    #         )
+    #     return value
 
-    def validate_Poi(self, value):
-        """Validate POI data"""
-        if '@name' not in value or not value['@name'].strip():
-            raise serializers.ValidationError("Name is required in POI")
-        return value
+    # def validate_Poi(self, value):
+    #     """Validate POI data"""
+    #     if 'name' not in value or not value['name'].strip():
+    #         raise serializers.ValidationError("Name is required in POI")
+    #     return value
 
-    def validate_Poa(self, value):
-        """Validate POA data"""
-        required_fields = ['@state', '@dist']
-        for field in required_fields:
-            if field not in value or not value[field]:
-                raise serializers.ValidationError(
-                    f"Field {field} is required in POA"
-                )
-        return value
+    # def validate_Poa(self, value):
+    #     """Validate POA data"""
+    #     required_fields = ['state']
+    #     for field in required_fields:
+    #         if field not in value or not value[field]:
+    #             raise serializers.ValidationError(
+    #                 f"Field {field} is required in POA"
+    #             )
+    #     return value

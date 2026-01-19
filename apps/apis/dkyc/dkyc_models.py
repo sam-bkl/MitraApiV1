@@ -141,13 +141,16 @@ class CosBcdDkyc(models.Model):
     verified_date = models.DateTimeField(null=True, blank=True)
     app_version = models.CharField(max_length=10, null=True, blank=True)
     rejection_reason = models.TextField(null=True, blank=True)
-
+    customer_type = models.CharField(max_length=10, null=True, blank=True)
     # PWD details
     type_disability = models.CharField(max_length=100, null=True, blank=True)
     pwd_per_disability = models.CharField(max_length=20, null=True, blank=True)
     pwd_doc_photo = models.CharField(max_length=200, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
+    category = models.CharField(max_length=25, null=True, blank=True)
+    auth_per_desig = models.CharField(max_length=50, null=True, blank=True)
+    cug_reference_id = models.CharField(max_length=20, null=True, blank=True)
+    cug_group_id = models.CharField(max_length=30, null=True, blank=True)
     class Meta:
         managed = False
         app_label= 'apis'
@@ -177,3 +180,100 @@ class DkycPosSignOtp(models.Model):
         managed = False
         app_label= 'apis'
         db_table = "dkyc_pos_sign_otp"
+
+class BulkBusinessGroups(models.Model):
+    business_group_id = models.AutoField(primary_key=True)
+    reference_number = models.CharField(max_length=50)
+    business_group_name = models.CharField(max_length=200)
+    business_group_type = models.CharField(max_length=20)
+    type_of_caf = models.CharField(max_length=20, default='DKYC')
+    connection_type = models.CharField(max_length=20)
+    business_group_size = models.IntegerField()
+    business_group_billing = models.CharField(max_length=100)
+    cafs_required = models.CharField(max_length=20, null=True, blank=True)
+    scope = models.CharField(max_length=100)
+    visibility = models.CharField(max_length=100)
+    tv_required = models.CharField(max_length=20, null=True, blank=True)
+    status = models.CharField(max_length=30, default='Pending for Approval')
+    created_date = models.DateTimeField()
+    approved_date = models.DateTimeField(null=True, blank=True)
+    approved_by = models.CharField(max_length=100, null=True, blank=True)
+    created_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(null=True, blank=True)
+    circle_code = models.CharField(max_length=10, null=True, blank=True)
+    ssa_code = models.CharField(max_length=30, null=True, blank=True)
+    insert_user_id = models.CharField(max_length=30, null=True, blank=True)
+    insert_user_name = models.CharField(max_length=100, null=True, blank=True)
+    approve_remark = models.CharField(max_length=200, null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label= 'apis'
+        db_table = "bulk_business_groups"
+
+class CompanyInformations(models.Model):
+    company_info_id = models.AutoField(primary_key=True)
+    business_group = models.ForeignKey(
+        BulkBusinessGroups,
+        db_column="business_group_id",
+        on_delete=models.DO_NOTHING,
+        related_name="companyinformations"
+    )
+    company_name = models.CharField(max_length=300)
+    type_of_organization = models.CharField(max_length=100)
+    cin = models.CharField(max_length=50, null=True, blank=True)
+    pin = models.CharField(max_length=20, null=True, blank=True)
+    registered_address1 = models.CharField(max_length=300)
+    registered_address2 = models.CharField(max_length=300, null=True, blank=True)
+    registered_address3 = models.CharField(max_length=300, null=True, blank=True)
+    registered_pin_code = models.CharField(max_length=10)
+    registered_state = models.CharField(max_length=100)
+    registered_district = models.CharField(max_length=100)
+    contact_number = models.CharField(max_length=20)
+    fax = models.CharField(max_length=20, null=True, blank=True)
+    email = models.CharField(max_length=100, null=True, blank=True)
+    billing_address_same_as_registered = models.BooleanField(default=False)
+    billing_address1 = models.CharField(max_length=300, null=True, blank=True)
+    billing_address2 = models.CharField(max_length=300, null=True, blank=True)
+    billing_address3 = models.CharField(max_length=300, null=True, blank=True)
+    billing_pin_code = models.CharField(max_length=10, null=True, blank=True)
+    billing_state = models.CharField(max_length=100, null=True, blank=True)
+    billing_district = models.CharField(max_length=100, null=True, blank=True)
+    created_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label= 'apis'
+        db_table = "company_informations"
+        
+class BulkConnectionDetails(models.Model):
+    connection_id = models.AutoField(primary_key=True)
+    business_group = models.ForeignKey(
+        BulkBusinessGroups,
+        db_column="business_group_id",
+        on_delete=models.DO_NOTHING,
+        related_name="connections"
+    )
+    serial_no = models.IntegerField()
+    gsm_number = models.CharField(max_length=20)
+    sim_number = models.CharField(max_length=30)
+    imsi_number = models.CharField(max_length=30)
+    customer_name = models.CharField(max_length=200)
+    user_name = models.CharField(max_length=200)
+    poi_type = models.CharField(max_length=50)
+    poi_number = models.CharField(max_length=100)
+    poa_type = models.CharField(max_length=50)
+    poa_number = models.CharField(max_length=100)
+    designation = models.CharField(max_length=200)
+    address_mentioned_in_poa = models.TextField()
+    created_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(null=True, blank=True)
+    caf_processed = models.CharField(max_length=3, null=True, blank=True)
+    act_status = models.CharField(max_length=3, null=True, blank=True)
+    act_remark = models.CharField(max_length=30, null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label= 'apis'
+        db_table = "bulk_connection_details"

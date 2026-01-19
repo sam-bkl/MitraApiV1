@@ -165,7 +165,11 @@ class CosBcdDkycCreateSerializer(serializers.ModelSerializer):
     dkyc_posPhoto = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
     dkyc_pwd_doc_photo = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
     dkyc_app_version = serializers.CharField(source='app_version', required=False, allow_blank=True, allow_null=True)
-
+    dkyc_sim_swap_category = serializers.CharField(source='category', required=False, allow_blank=True, allow_null=True)
+    dkyc_auth_per_desig = serializers.CharField(source='auth_per_desig', required=False, allow_blank=True, allow_null=True)
+    dkyc_cug_reference_id = serializers.CharField(source='cug_reference_id', required=False, allow_blank=True, allow_null=True)
+    dkyc_cug_group_id = serializers.CharField(source='cug_group_id', required=False, allow_blank=True, allow_null=True)
+    dkyc_customer_type = serializers.CharField(source='customer_type', required=False, allow_blank=True, allow_null=True)
     class Meta:
         model = CosBcdDkyc
         fields = "__all__"
@@ -222,3 +226,57 @@ class CosBcdDkycCreateSerializer(serializers.ModelSerializer):
         attrs["connection_type"] = 2 if conn_type_str == "postpaid" else 1
 
         return attrs
+    
+
+
+class BulkBusinessSearchInputSerializer(serializers.Serializer):
+    search_text = serializers.CharField(
+        max_length=50,
+        allow_blank=False,
+        trim_whitespace=True
+    )
+    circle_code = serializers.CharField(
+        max_length=10,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=True
+    )
+
+class BulkBusinessSearchOutputSerializer(serializers.Serializer):
+    business_group_id = serializers.IntegerField()
+    reference_number = serializers.CharField()
+    company_name = serializers.CharField()
+    registered_address1 = serializers.CharField()
+    registered_district = serializers.CharField()
+
+class BusinessGroupDetailInputSerializer(serializers.Serializer):
+    business_group_id = serializers.IntegerField(min_value=1)
+
+class CompanyInfoSerializer(serializers.Serializer):
+    company_name = serializers.CharField()
+    registered_address1 = serializers.CharField()
+    registered_address2 = serializers.CharField()
+    registered_district = serializers.CharField()
+    registered_state = serializers.CharField()
+    registered_pin_code = serializers.CharField()
+
+    
+
+class BulkConnectionMiniSerializer(serializers.Serializer):
+    gsm_number = serializers.CharField()
+    sim_number = serializers.CharField()
+    customer_name = serializers.CharField()
+    user_name = serializers.CharField()
+    poi_type = serializers.CharField()
+    poi_number = serializers.CharField()
+    poa_type = serializers.CharField()
+    poa_number = serializers.CharField()
+    designation = serializers.CharField()
+
+class BusinessGroupDetailSerializer(serializers.Serializer):
+    business_group_id = serializers.IntegerField()
+    reference_number = serializers.CharField()
+    business_group_name = serializers.CharField()
+    business_group_type = serializers.CharField()
+    company = CompanyInfoSerializer()
+    connections = BulkConnectionMiniSerializer(many=True)

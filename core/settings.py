@@ -49,12 +49,29 @@ INSTALLED_APPS = [
     'rest_framework',
     "apps.apis",
     'rest_framework_simplejwt',
+    'drf_spectacular'
 ]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "apps.apis.authentication.CtopJWTAuthentication",
-    ]
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',  # Add this line
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Sanchaar Mitra API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [{
+        'type': 'http',
+        'scheme': 'bearer',
+        'bearerFormat': 'JWT',
+    }],
+    'SERVERS': [
+        {'url': 'https://sm.bsnl.co.in/cosapp', 'description': 'Production server'},
+    ],
 }
 
 SIMPLE_JWT = {
@@ -153,6 +170,12 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT_READ', '5433'),  # keep as string
     }
 }
+
+ORACLE_CONFIG = {
+    'user': os.getenv('ORACLE_USER'),
+    'password': os.getenv('ORACLE_PASSWORD'),
+    'dsn': os.getenv('ORACLE_DSN'),
+}
 DATABASE_ROUTERS = ['core.db_router.LegacyRouter']
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -189,3 +212,4 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AADHAAR_PEPPER = env("AADHAAR_PEPPER")
+DEFAULT_FROM_EMAIL=env("DEFAULT_FROM_EMAIL")

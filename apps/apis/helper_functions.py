@@ -14,7 +14,17 @@ def check_gsm_caf_logic(gsmno, caf_type):
             "Allow": "Yes",
             "Reason": "No existing CAF found"
         }
+    verified_record_swap = records.filter(
+        caf_type="simswap",
+        verified_flag='Y'
+    ).order_by('-verified_date').first()
 
+    if verified_record_swap:
+        return {
+            "Allow": "Yes",
+            "Reason": "Sim swap CAF already exists and verified",
+            "verified_date": verified_record_swap.verified_date
+        }
     # Case 2: Verified CAF exists for same caf_type
     verified_record = (
         records

@@ -14,3 +14,4 @@ numpy
 mediapipe
 cx_Oracle==8.3
 python-dotenv
+drf-spectacular

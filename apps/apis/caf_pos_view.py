@@ -112,9 +112,11 @@ def update_caf_details(request):
     upcValidUpto = mnp_details.get("upcValidUptoDate")
     mnp_connection_type = mnp_details.get("mnpConnectionType")
     caf_type = request.data.get("caf_type")
+    customer_type = request.data.get("customer_type") or "Individual"
     pwd_per_disability= request.data.get("pwd_per_disability", None)
     profession = request.data.get("profession", None)
     pwd_certificate = request.data.get("pwd_certificate", None)
+    pos_aadhaar = request.data.get("pos_aadhaar", None)
     decoded_photo = None
     decoded_live_photo = None
     decoded_pos_photo = None
@@ -135,11 +137,11 @@ def update_caf_details(request):
 
     
 
-    if app_version not in ALLOWED_VERSIONS:
-        return Response(
-            {"status": "error", "message": "Update required"},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # if app_version not in ALLOWED_VERSIONS:
+    #     return Response(
+    #         {"status": "error", "message": "Update required"},
+    #         status=status.HTTP_403_FORBIDDEN
+    #     )
 
     if photo_base64:
         try:
@@ -325,6 +327,7 @@ def update_caf_details(request):
     record.ssa_code = ssa_code
     record.caf_serial_no= caf_no
     record.simstate = simstate
+    record.customer_type = customer_type
     if connection_type=="postpaid":
         record.connection_type=2
     else:
@@ -417,6 +420,7 @@ def update_caf_details(request):
     record.nationality = nationality
     record.other_connection_det = number_of_mobile_connections
     record.alternate_contact_no = customer_alternate_mobile_number
+    record.pos_aadhaar = pos_aadhaar 
     #record.alternate_contact_no =
     # record.photo_aadhaar = decoded_photo
     # record.photo_pos = decoded_pos_live_photo

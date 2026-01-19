@@ -3,8 +3,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated , AllowAny
-from .models import CtopMaster,Simprepaid, Simpostpaid, GsmChoice ,ApiOtpTable, AppVersion,RefOtpTable,CosBcd,FrcPlan,SimpostpaidSold,SimprepaidSold, PostpaidPlansApp,UpgradationOtpTable, SimAllotmentAdh
-from .serializers import CtopMasterSerializer,SimprepaidSerializer,SimpostpaidSerializer,GsmChoiceSerializer,AppVersionSerializer
+from .models import CtopMaster,Simprepaid, Simpostpaid, GsmChoice ,ApiOtpTable, AppVersion,RefOtpTable,CosBcd,FrcPlan,SimpostpaidSold,SimprepaidSold, PostpaidPlansApp,UpgradationOtpTable, SimAllotmentAdh,AppOtaUpdate
+from .serializers import CtopMasterSerializer,SimprepaidSerializer,SimpostpaidSerializer,GsmChoiceSerializer,AppVersionSerializer,AppOtaUpdateSerializer
 import random
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
@@ -22,6 +22,7 @@ from .utils import is_sim_allotted_today
 import logging
 from .dkyc.dkyc_models import CosBcdDkyc
 from itertools import chain
+from apps.apis.external_data.send_mail import send_email_otp
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,9 @@ def check_otp(request):
                     'name': ctop.name,
                     'vendor_code':ctop.attached_to,
                     'circle_code':str(ctop.circle_code),
-                    'aadhaar_no':aadhaar_no
+                    'aadhaar_no':aadhaar_no,
+                    'pos_latititude': ctop.latitude,
+                    'pos_longitude': ctop.longitude
                     }
                 },
                 status=status.HTTP_200_OK
@@ -774,6 +777,12 @@ def get_app_version(request):
     try:
         # Fetch the latest version (assuming last inserted is latest)
         version_obj = AppVersion.objects.order_by('-id').first()
+        ota_obj = (
+            AppOtaUpdate.objects
+            .using("legacy")          # remove if not needed
+            .order_by("-created_at")
+            .first()
+        )
 
         if not version_obj:
             return Response(
@@ -785,11 +794,15 @@ def get_app_version(request):
             )
 
         serializer = AppVersionSerializer(version_obj)
-
+        ota_serializer = AppOtaUpdateSerializer(ota_obj)
         return Response(
             {
                 "status": "success",
-                "version": serializer.data['version']
+                "version": serializer.data['version'],
+                "ota_update": (
+                    ota_serializer.data["ota_update"]
+                    if ota_serializer else None
+                )
             },
             status=status.HTTP_200_OK
         )
@@ -1738,6 +1751,23 @@ def check_gsm_caf(request):
             },
             status=status.HTTP_200_OK
         )
+    verified_record_swap = records.filter(
+        caf_type="simswap",
+        verified_flag='Y'
+    ).order_by('-verified_date').first()
+
+    if verified_record_swap:
+        return Response(
+            {
+                "status": "success",
+                "Allow": "Yes",
+                "gsmno": gsmno,
+                "caf_type": caf_type,
+                "Reason": "Simswap CAF already exists and verified",
+                "Date of Verification": verified_record_swap.verified_date
+            },
+            status=status.HTTP_200_OK
+        )
 
     # Case 2: Verified CAF exists
     verified_record = records.filter(
@@ -1847,7 +1877,60 @@ def check_aadhaar_onboarding(request):
         }, status=200)
 
 
- 
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def email_verify_otp(request):
+
+    email = request.data.get("email_id", "").strip().lower()
+    otp = request.data.get("otp", "").strip()
+
+    if not email or not otp:
+        return Response(
+            {
+                "status": "failure",
+                "message": "Email ID and OTP are required"
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    otp_record = (
+        EmailOtpTable.objects
+        .filter(email_id=email, otp=otp)
+        .order_by("-created_at")
+        .first()
+    )
+
+    if not otp_record:
+        return Response(
+            {
+                "status": "failure",
+                "message": "Invalid OTP"
+            },
+            status=status.HTTP_200_OK
+        )
+
+    # OTP expiry – 10 minutes
+    otp_age = (timezone.now() - otp_record.created_at).total_seconds()
+    if otp_age > 600:
+        otp_record.delete()
+        return Response(
+            {
+                "status": "failure",
+                "message": "OTP expired. Please request a new one."
+            },
+            status=status.HTTP_200_OK
+        )
+
+    return Response(
+        {
+            "status": "success",
+            "message": "OTP verified successfully",
+            "email_id": email,
+            "verified_at": otp_record.created_at
+        },
+        status=status.HTTP_200_OK
+    )
 
     
 

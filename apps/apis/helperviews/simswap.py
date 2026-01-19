@@ -8,8 +8,8 @@ def simswap_save(request, caf_id, ctopupno, actual_ip,mobileno):
 
     if "simswap_details" in request.data:
         simswap = request.data.get("simswap_details", {})
-    elif "dkyc_sim_swap_details" in request.data:
-        simswap = request.data.get("dkyc_sim_swap_details", {}) 
+    elif "dkyc_simswap_details" in request.data:
+        simswap = request.data.get("dkyc_simswap_details", {}) 
 
     #simswap = request.data.get("simswap_details", {})
     ss_list = simswap.get("simSwapDetailsFromSS", [])

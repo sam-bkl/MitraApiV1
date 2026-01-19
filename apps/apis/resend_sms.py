@@ -3,7 +3,7 @@ import requests
 url = "https://bulksms.bsnl.in:5010/api/Send_SMS"
 token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEwMDIwIDMiLCJuYmYiOjE3NjI0MTkzMTEsImV4cCI6MTc5Mzk1NTMxMSwiaWF0IjoxNzYyNDE5MzExLCJpc3MiOiJodHRwczovL2J1bGtzbXMuYnNubC5pbjo1MDEwIiwiYXVkIjoiMTAwMjAgMyJ9.Onm5hbS2_k_BcueccKrNGoEDhi51U0dkqrxzHDUkyQY"
 
-def resend_sms(number,otp):
+def resend_sms(number,otp,purpose="Login"):
     headers = {
     "Authorization": f"Bearer {token}",
     "Content-Type": "application/json"
@@ -22,7 +22,7 @@ def resend_sms(number,otp):
     "Entity_Id": "1401601530000015602",
     "Content_Template_Id": "1407176483305773909",
     "Template_Keys_and_Values": [
-        {"Key": "activity", "Value": "Login"},
+        {"Key": "activity", "Value": purpose},
         {"Key": "otp", "Value": otp},
         {"Key": "subsystem", "Value": "COS"},
         {"Key": "validity", "Value": "10"},
