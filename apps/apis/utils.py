@@ -56,3 +56,38 @@ def get_client_ip(request):
     if xri:
         return xri
     return ra
+
+from django.utils import timezone
+
+def safe_clone_instance(
+    source_obj,
+    target_model,
+    *,
+    exclude_fields=None,
+    override_fields=None
+):
+    """
+    Safely clone a model instance to another model.
+    - BinaryField safe
+    - No model_to_dict
+    - No __dict__
+    """
+
+    exclude_fields = set(exclude_fields or [])
+    override_fields = override_fields or {}
+
+    data = {}
+
+    for field in source_obj._meta.fields:
+        field_name = field.name
+
+        if field_name in exclude_fields:
+            continue
+
+        # Copy value directly (BinaryField safe)
+        data[field_name] = getattr(source_obj, field_name)
+
+    # Apply overrides (timestamps, status, etc.)
+    data.update(override_fields)
+
+    return target_model.objects.create(**data)

@@ -109,27 +109,27 @@ class LocalReferenceSerializer(serializers.Serializer):
 
 class PostpaidPlanSerializer(serializers.Serializer):
     """Postpaid plan details"""
-    plan_name = serializers.CharField(required=False, max_length=200)
-    plan_code = serializers.CharField(required=False, max_length=50)
+    plan_name = serializers.CharField(required=False,allow_blank=True, max_length=200)
+    plan_code = serializers.CharField(required=False,allow_blank=True, max_length=50)
 
 class PostpaidDetailsSerializer(serializers.Serializer):
     """Postpaid connection details"""
-    stdIsd = serializers.CharField(required=False, max_length=10)
-    deposit = serializers.CharField(required=False, max_length=5)
-    reasonForNoDeposit = serializers.CharField(required=False, max_length=100)
-    methodOfPayment = serializers.CharField(required=False, max_length=50)
-    amountReceived = serializers.CharField(required=False, max_length=20)
-    plan = PostpaidPlanSerializer(required=False)
+    stdIsd = serializers.CharField(required=False,allow_blank=True, max_length=10)
+    deposit = serializers.CharField(required=False,allow_blank=True, max_length=5)
+    reasonForNoDeposit = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    methodOfPayment = serializers.CharField(required=False,allow_blank=True, max_length=50)
+    amountReceived = serializers.CharField(required=False,allow_blank=True, max_length=20)
+    plan = PostpaidPlanSerializer(required=False,allow_null=True)
 
 class FRCPlanSerializer(serializers.Serializer):
     """FRC plan details for prepaid"""
-    plan_name = serializers.CharField(required=False, max_length=200)
-    plan_code = serializers.CharField(required=False, max_length=50)
-    category_code = serializers.CharField(required=False, max_length=50)
+    plan_name = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    plan_code = serializers.CharField(required=False,allow_blank=True, max_length=50)
+    category_code = serializers.CharField(required=False,allow_blank=True, max_length=50)
 
 class FRCDetailsSerializer(serializers.Serializer):
     """FRC details for prepaid"""
-    frc_plan_prepaid = FRCPlanSerializer(required=False)
+    frc_plan_prepaid = FRCPlanSerializer(required=False,allow_null=True)
     frc_ctopup_number = serializers.CharField(required=False, max_length=50)
     frc_ctopup_number_mpin = serializers.CharField(required=False, max_length=10)
 
@@ -149,9 +149,12 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
     mobileno = serializers.CharField(max_length=30, required=True)
     simno = serializers.CharField(max_length=150, required=False,allow_blank=True)
     connection_type = serializers.ChoiceField(choices=['prepaid', 'postpaid'], required=True)
-    caf_type = serializers.ChoiceField(choices=['cymn', 'mnp', 'simswap', 'simupgrade'], required=True)
+    caf_type = serializers.ChoiceField(choices=['cymn', 'mnp', 'simswap', 'simupgrade','pre2post','post2pre','rev-ekyc'], required=True)
     customer_type = serializers.CharField(max_length=30, required=False) 
-    
+    sim_category = serializers.ChoiceField(
+        choices=["physical", "esim"],
+        required=True
+    )
     # Auth fields
     ctopup_username = serializers.CharField(max_length=150, required=False, allow_blank=True)
     pwd = serializers.CharField(max_length=9, required=True)
@@ -198,7 +201,7 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
     
     # Connection-specific
     postpaid_details = PostpaidDetailsSerializer(required=False)
-    frc_details = FRCDetailsSerializer(required=False)
+    frc_details = FRCDetailsSerializer(required=False,allow_null=True)
     
     # PWD
     pwd_per_disability = serializers.CharField(required=False, allow_blank=True)
@@ -213,7 +216,7 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
 
     def validate_caf_type(self, value):
         """Validate CAF type"""
-        valid_types = ['cymn', 'mnp', 'simswap', 'simupgrade']
+        valid_types = ['cymn', 'mnp', 'simswap', 'simupgrade','pre2post','post2pre','rev-ekyc']
         if value not in valid_types:
             raise serializers.ValidationError(
                 f"CAF type must be one of {valid_types}, got '{value}'"
@@ -222,7 +225,7 @@ class UpdateCAFDetailsSerializer(serializers.Serializer):
 
     def validate_app_version(self, value):
         """Validate app version"""
-        allowed_versions = {'1.1.0'}
+        allowed_versions = {'1.1.1','1.1.2'}
         if value not in allowed_versions:
             raise serializers.ValidationError(
                 f"Unsupported app version: {value}. Update required."

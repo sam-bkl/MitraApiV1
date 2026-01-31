@@ -250,6 +250,7 @@ if __name__ == "__main__":
         
         # Remarks
         {'oracle_column': 'SWAP_REMARKS', 'fixed_value': '4gupgrade', 'max_length': 100},
+        {'oracle_column': 'SWAP_REASON_ID ', 'fixed_value': '17', 'max_length': 100},
         
         # Audit / Approval
         {'oracle_column': 'INS_USR', 'pg_column': 'insert_user', 'max_length': 30},

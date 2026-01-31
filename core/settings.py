@@ -213,3 +213,11 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AADHAAR_PEPPER = env("AADHAAR_PEPPER")
 DEFAULT_FROM_EMAIL=env("DEFAULT_FROM_EMAIL")
+
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY")
+
+PROXIES = {
+    "http": HTTP_PROXY,
+    "https": HTTPS_PROXY,
+}

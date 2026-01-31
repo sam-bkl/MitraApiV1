@@ -22,9 +22,12 @@ from django.conf import settings
 from datetime import datetime
 from ..send_sms import dkyc_send_sms
 from django.db.models import Q
-
 from apps.apis.dkyc.dkyc_models import BulkBusinessGroups,CompanyInformations,BulkConnectionDetails
 from apps.apis.dkyc.dekyc_serializers import BulkBusinessSearchInputSerializer,BulkBusinessSearchOutputSerializer,BusinessGroupDetailInputSerializer,BusinessGroupDetailSerializer
+import requests
+import urllib3
+from ..esim.esim_post_view import reserve_esim
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def dump_request_to_text(request, tag="dkyc"):
@@ -135,7 +138,11 @@ def create_dkyc_record(request):
     #     }, status=status.HTTP_400_BAD_REQUEST)
 
     # ---- Generate CAF
-    caf_no = create_cafid.get_caf_id("D")
+    caf_type = request.data.get("dkyc_caf_type")
+    if caf_type in ("cugsimswap", "cugmnp", "cugm2m","cug"):
+        caf_no = create_cafid.get_caf_id("BDG")
+    else:
+        caf_no = create_cafid.get_caf_id("D")
     if not caf_no:
         return Response(
             {"status": "error", "message": "CAF generation failed"},
@@ -143,9 +150,10 @@ def create_dkyc_record(request):
         )
 
     # ---- Handle simswap before save
-    caf_type = request.data.get("dkyc_caf_type")
+    
     mobileno = request.data.get("dkyc_selected_mobile_number")
     ctopupno = request.data.get("dkyc_parent_ctopup_number")
+    circle_code = request.data.get("dkyc_circle_code")
 
     if caf_type == "simswap":
         result = simswap_save(request, caf_no, ctopupno, actual_ip, mobileno)
@@ -160,40 +168,67 @@ def create_dkyc_record(request):
     serializer = CosBcdDkycCreateSerializer(data=data)
 
     if not serializer.is_valid():
-        return Response({
-            "status": "error",
-            "message": "Validation failed",
-            "errors": serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # 🔴 LOG VALIDATION ERROR HERE
+        with open("/home/bsnlcos/apis/logs/dkyc_serializer_errors.txt", "a") as f:
+            f.write(
+                f"\n[{timezone.now()}] UpdateCAFDetailsSerializer ERROR\n"
+                f"errors: {serializer.errors}\n"
+                f"payload: {request.data}\n"
+            )
+
+        return Response(
+            {
+                "status": "error",
+                "message": "Validation failed",
+                "errors": serializer.errors
+            },
+            status=400
+        )
+
+    # if not serializer.is_valid():
+    #     return Response({
+    #         "status": "error",
+    #         "message": "Validation failed",
+    #         "errors": serializer.errors
+    #     }, status=status.HTTP_400_BAD_REQUEST)
 
     try:
         with transaction.atomic(using="legacy"):
+            sim_category = serializer.validated_data.get("dkyc_sim_category")
 
             record = serializer.save()
 
             # ⚠️ CRITICAL: Update inventory FIRST (before images)
             # If this fails, nothing gets saved
             connection_type = record.connection_type
-            simno = record.sim_no
-            
-            # Set sim_type before inventory update
-            if connection_type == 2:
-                sim = Simpostpaid.objects.filter(simno=simno).only("product_code").first()   
+            if sim_category =="esim":
+                esim_obj = reserve_esim(circle_code,connection_type)
+                simno = esim_obj.simno
+                record.sim_no = simno
+                record.sim_type = 3
             else:
-                sim = Simprepaid.objects.filter(simno=simno).only("product_code").first() 
+                simno = record.sim_no
             
-            if sim and sim.product_code in (7003, 7004):
-                record.sim_type = 2
-            else:
-                record.sim_type = 1
+                # Set sim_type before inventory update
+                if connection_type == 2:
+                    sim = Simpostpaid.objects.filter(simno=simno).only("product_code").first()   
+                else:
+                    sim = Simprepaid.objects.filter(simno=simno).only("product_code").first() 
+                
+                if sim and sim.product_code in (7003, 7004):
+                    record.sim_type = 2
+                else:
+                    record.sim_type = 1
             
             # Update inventory (will raise ValidationError if fails)
-            update_inventory_atomic(
-                simno=simno,
-                gsmno=record.gsmnumber,
-                connection_type=connection_type,
-                plan=caf_type
-            )
+            if caf_type != "cugm2m":
+                update_inventory_atomic(
+                    simno=simno,
+                    gsmno=record.gsmnumber,
+                    connection_type=connection_type,
+                    caf_type=caf_type,sim_mode=sim_category
+                )
             
             # ---- Save images AFTER inventory succeeds
             record.poi_document_front = save_base64_image(
@@ -217,7 +252,8 @@ def create_dkyc_record(request):
             record.pwd_doc_photo = save_base64_image(
                 request.data.get("dkyc_pwd_doc_photo"), caf_no, "pwd"
             )
-            record.save(update_fields=[
+
+            update_fields = [
                 "sim_type",
                 "poi_document_front",
                 "poi_document_back",
@@ -225,8 +261,33 @@ def create_dkyc_record(request):
                 "poa_document_back",
                 "customer_photo",
                 "pos_photo",
-                "pwd_doc_photo"
-            ])
+                "pwd_doc_photo",
+            ]
+
+            if sim_category == "esim":
+                update_fields.append("sim_no")
+
+            record.save(update_fields=update_fields)
+            # record.save(update_fields=[
+            #                 "sim_type",
+            #                 "poi_document_front",
+            #                 "poi_document_back",
+            #                 "poa_document_front",
+            #                 "poa_document_back",
+            #                 "customer_photo",
+            #                 "pos_photo",
+            #                 "pwd_doc_photo"
+            #             ])
+                        
+
+            if caf_type in ( "cugmnp", "cugm2m","cug"):
+                BulkConnectionDetails.objects.filter(
+                    gsm_number=mobileno
+                ).update(
+                    act_status='P',
+                    updated_at=timezone.now()
+                )
+
 
             # Verification check
             if not CosBcdDkyc.objects.filter(caf_serial_no=caf_no).exists():
@@ -444,6 +505,87 @@ def search_bulk_business_groups(request):
     # ✅ THESE LINES YOU ASKED ABOUT
     search_text = serializer.validated_data["search_text"]
     circle_code = serializer.validated_data.get("circle_code")
+    connectionCategory = serializer.validated_data["connectionCategory"]
+    cafType = serializer.validated_data.get("cafType")
+
+    if cafType and cafType.lower() == "m2m":
+        try:
+            # Get proxy settings - use None to bypass proxy
+            use_proxy = getattr(settings, "USE_M2M_PROXY", False)
+            proxies = getattr(settings, "PROXIES", None) if use_proxy else None
+            
+            response = requests.post(
+                "https://m2mbsnlkerala.bsnl.co.in/api/SearchCustomerDetails",
+                params={"customer_name": search_text},
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                proxies=proxies,  # None means no proxy
+                timeout=(10, 30),  # Increased timeout (connect, read)
+                verify=False  # Disable SSL verification
+            )
+            response.raise_for_status()
+            external_data = response.json()
+
+        except requests.exceptions.Timeout:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "M2M API request timed out",
+                },
+                status=status.HTTP_504_GATEWAY_TIMEOUT
+            )
+
+        except requests.exceptions.SSLError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "SSL error connecting to M2M API",
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        except requests.exceptions.HTTPError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"M2M API returned error: {e.response.status_code}",
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        except requests.RequestException as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Failed to fetch M2M customer data",
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        # Normalize external response to your API format
+        results = [
+            {
+                "business_group_id": item.get("cug_id"),
+                "reference_number": item.get("customer_id"),
+                "company_name": item.get("company_name"),
+                "registered_address1": "",
+                "registered_district": "",
+            }
+            for item in external_data
+        ]
+
+        output_serializer = BulkBusinessSearchOutputSerializer(results, many=True)
+
+        return Response(
+            {
+                "status": "success",
+                "count": len(output_serializer.data),
+                "data": output_serializer.data,
+            },
+            status=status.HTTP_200_OK
+        )
 
 
     # -----------------------------
@@ -511,6 +653,103 @@ def get_business_group_details(request):
     serializer.is_valid(raise_exception=True)
 
     business_group_id = serializer.validated_data["business_group_id"]
+    connectionCategory = serializer.validated_data["connectionCategory"]
+    cafType = serializer.validated_data.get("cafType")
+
+    if cafType and cafType.lower() == "m2m":
+        try:
+            # Get proxy settings
+            proxies = getattr(settings, "PROXIES", None)
+            verify_ssl = getattr(settings, "M2M_VERIFY_SSL", False)
+            
+            response = requests.post(  # Keep POST as in Postman
+                "https://m2mbsnlkerala.bsnl.co.in/api/GetNewCustomerDetails",
+                params={"customer_id": business_group_id},
+                headers={
+                    "Accept": "application/json",
+                    # Remove Content-Type for params-only POST
+                },
+                proxies=proxies,
+                timeout=(3, 5),
+                verify=verify_ssl
+            )
+            response.raise_for_status()
+            m2m_data = response.json()
+            
+            # Map M2M response to your structure
+            company = {
+                "company_name": m2m_data.get("company_name"),
+                "registered_address1": m2m_data.get("registered_address1"),
+                "registered_address2": m2m_data.get("registered_address2"),
+                "registered_district": m2m_data.get("registered_district"),
+                "registered_state": m2m_data.get("registered_state"),
+                "registered_pin_code": m2m_data.get("registered_pincode"),
+            }
+            
+            # Map connection details from M2M data
+            connections = [{
+                "gsm_number": m2m_data.get("msisdn"),
+                "sim_number": m2m_data.get("sim_no"),
+                "customer_name": m2m_data.get("auth_first_name"),
+                "user_name": None,  # Not in M2M response
+                "poi_type": m2m_data.get("poi_type"),
+                "poi_number": m2m_data.get("poi_number"),
+                "poa_type": m2m_data.get("poa_type"),
+                "poa_number": m2m_data.get("poa_number"),
+                "designation": None,  # Not in M2M response
+                "alternate_no": m2m_data.get("contact_number"),
+            }]
+            
+            # Build response from M2M data
+            response_data = {
+                "business_group_id": m2m_data.get("customer_id"),
+                "reference_number": m2m_data.get("customer_id"), 
+                "business_group_name": m2m_data.get("business_group_name"),
+                "business_group_type": m2m_data.get("business_group_type"),
+                "connection_type": m2m_data.get("connection_type"),
+                "business_group_size": m2m_data.get("business_group_size"),
+                "status": "active",  # Assuming active if data exists
+                "company": company,
+                "connections": connections,
+            }
+            
+            output = BusinessGroupDetailSerializer(response_data)
+            
+            return Response(
+                {
+                    "status": "success",
+                    "data": output.data,
+                    "source": "m2m_api"
+                },
+                status=200
+            )
+
+        except requests.exceptions.Timeout:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "M2M API request timed out"
+                },
+                status=status.HTTP_504_GATEWAY_TIMEOUT
+            )
+
+        except requests.exceptions.HTTPError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"M2M API error: {e.response.status_code}"
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        except requests.RequestException:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Failed to fetch M2M customer details"
+                },
+                status=status.HTTP_502_BAD_GATEWAY
+            )
 
     # ---------------------------
     # 2. Fetch business group
@@ -540,19 +779,42 @@ def get_business_group_details(request):
             "registered_address2",
             "registered_district",
             "registered_state",
-            "registered_pin_code"
+            "registered_pin_code",
+            "govt_flag"
         )
         .first()
     )
-   
+    if company["govt_flag"] == "Y":
+        dkyc_done = BulkConnectionDetails.objects.filter(
+            business_group_id=business_group_id,
+            act_status="P"
+        ).exists()
+
+        if dkyc_done:
+            return Response(
+                {
+                    "status": "failure",
+                    "message": "DKYC already done for master number"
+                },
+                status=200
+            )
+        else:
+            connections = (
+            BulkConnectionDetails.objects
+            .filter(business_group_id=business_group_id)
+            .exclude(act_status="P")
+            .order_by("serial_no")
+            .values("gsm_number", "sim_number","customer_name","user_name","poi_type","poi_number","poa_type","poa_number","designation","alternate_no")[:1]
+        )
     # ---------------------------
     # 4. Fetch first 20 connections
     # ---------------------------
     connections = (
         BulkConnectionDetails.objects
         .filter(business_group_id=business_group_id)
+        .exclude(act_status="P")
         .order_by("serial_no")
-        .values("gsm_number", "sim_number","customer_name","user_name","poi_type","poi_number","poa_type","poa_number","designation")[:20]
+        .values("gsm_number", "sim_number","customer_name","user_name","poi_type","poi_number","poa_type","poa_number","designation","alternate_no")[:20]
     )
    
     # ---------------------------

@@ -6,8 +6,8 @@ from ..models import Simpostpaid,SimpostpaidSold,Simprepaid,SimprepaidSold,GsmCh
 from django.db import transaction
 from ..esim.models import Esimpostpaid, Esimprepaid, EsimpostpaidSold, EsimprepaidSold
 
-@transaction.atomic(using="legacy")
-def update_inventory_atomic(simno, gsmno, connection_type, plan, sim_mode="physical"):
+
+def update_inventory_atomic(simno, gsmno, connection_type, caf_type, sim_mode="physical"):
     """
     Atomic SIM + GSM inventory update
 
@@ -159,7 +159,7 @@ def update_inventory_atomic(simno, gsmno, connection_type, plan, sim_mode="physi
     # =====================================================
     # 3️⃣ GSM HANDLING (unchanged)
     # =====================================================
-    if plan not in ("mnp", "simswap", "simupgrade","cug"):
+    if caf_type not in ("mnp", "simswap", "simupgrade","cug","pre2post","post2pre"):
 
         if GsmChoiceSold.objects.filter(gsmno=gsmno).exists():
             raise ValidationError(f"GSM already sold: {gsmno}")

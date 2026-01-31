@@ -21,7 +21,9 @@ class CosBcdDkycCreateSerializer(serializers.ModelSerializer):
     # =========================
     # Connection
     # =========================
+
     dkyc_type_of_connection = serializers.CharField(write_only=True,required=True)
+    dkyc_sim_category = serializers.CharField(write_only=True,required=False)
     dkyc_sim_type = serializers.CharField(source='sim_type', required=False, allow_blank=True, allow_null=True)
     dkyc_7_subscriber_status = serializers.CharField(source='subscriber_type', required=True)
     dkyc_8_nationality = serializers.CharField(source='nationality', required=False, allow_blank=True, allow_null=True)
@@ -30,7 +32,7 @@ class CosBcdDkycCreateSerializer(serializers.ModelSerializer):
     # SIM / GSM / OTP
     # =========================
     dkyc_selected_mobile_number = serializers.CharField(source='gsmnumber', required=False, allow_blank=True, allow_null=True)
-    dkyc_22_sim_no = serializers.CharField(source='sim_no', required=True)
+    dkyc_22_sim_no = serializers.CharField(source='sim_no', required=False, allow_blank=True, allow_null=True)
     dkyc_21_customer_mobile_no = serializers.CharField(source='cust_mob_no', required=True)
     dkyc_21_customer_otp = serializers.CharField(source='customer_otp', required=True)
     dkyc_21_customer_otp_time = serializers.DateTimeField(source='customer_otp_time', required=True)
@@ -177,6 +179,7 @@ class CosBcdDkycCreateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         validated_data.pop("dkyc_type_of_connection", None)
+        validated_data.pop("dkyc_sim_category", None)
         for key in [
             "dkyc_poiDocumentFront",
             "dkyc_poiDocumentBack",
@@ -241,16 +244,36 @@ class BulkBusinessSearchInputSerializer(serializers.Serializer):
         allow_blank=True,
         trim_whitespace=True
     )
+    connectionCategory = serializers.CharField(
+        max_length=50,
+        allow_blank=False,
+        trim_whitespace=True
+    )
+    cafType = serializers.CharField(
+        max_length=50,
+        allow_blank=False,
+        trim_whitespace=True
+    )
 
 class BulkBusinessSearchOutputSerializer(serializers.Serializer):
-    business_group_id = serializers.IntegerField()
+    business_group_id = serializers.CharField()
     reference_number = serializers.CharField()
     company_name = serializers.CharField()
     registered_address1 = serializers.CharField()
     registered_district = serializers.CharField()
 
 class BusinessGroupDetailInputSerializer(serializers.Serializer):
-    business_group_id = serializers.IntegerField(min_value=1)
+    business_group_id = serializers.CharField()
+    connectionCategory = serializers.CharField(
+        max_length=50,
+        allow_blank=False,
+        trim_whitespace=True
+    )
+    cafType = serializers.CharField(
+        max_length=50,
+        allow_blank=False,
+        trim_whitespace=True
+    )
 
 class CompanyInfoSerializer(serializers.Serializer):
     company_name = serializers.CharField()
@@ -272,9 +295,10 @@ class BulkConnectionMiniSerializer(serializers.Serializer):
     poa_type = serializers.CharField()
     poa_number = serializers.CharField()
     designation = serializers.CharField()
+    alternate_no = serializers.CharField()
 
 class BusinessGroupDetailSerializer(serializers.Serializer):
-    business_group_id = serializers.IntegerField()
+    business_group_id = serializers.CharField()
     reference_number = serializers.CharField()
     business_group_name = serializers.CharField()
     business_group_type = serializers.CharField()

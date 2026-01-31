@@ -30,7 +30,7 @@ def fetch_sim_swap_status(mobile_numbers):
     status_map = {}
 
     for gsm, activation_status in rows:
-        if activation_status == "SC":
+        if activation_status in ("SC","C"):
             status_map[str(gsm)] = "upgradation complete"
         else:
             status_map[str(gsm)] = "pending"

@@ -60,12 +60,12 @@ def update_caf_details(request):
             .values_list("verified_flag", flat=True)
             .first()
         )
-        if verified_flag != "R":
+        if verified_flag is None or verified_flag != "R":
             return Response({
                 "status": "failed",
                 "message": "SIM already allotted within restriction window",
                 "previous_gsm": previous_gsm
-            }, status=400)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
     #########################################

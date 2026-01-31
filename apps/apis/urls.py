@@ -7,16 +7,18 @@ from .testapis import get_prepaid_test
 from .dkyc.dkyc_view import create_dkyc_record,dkyc_send_otp,dkyc_verify_otp, dkyc_resend_otp,search_bulk_business_groups, get_business_group_details
 from .features.gsm_filter_view import search_gsm_numbers
 from .features.reserve_numbers import reserve_gsm_number,get_reserved_gsm_numbers
-from .external_data.ssdata import get_customer_info
+from .external_data.ssdata import get_customer_info,post_to_pre_check
 from .features.sim_upgrade.views import create_sim_upgrade_request,get_app_upgrade_options,list_sim_upgrade_requests
 from .esim.views import get_esim_by_simnumber,email_verify_otp,email_resend_otp,send_email_otp
 from .esim.esim_post_view import update_caf_details_esim
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from .sms.views import app_send_otp , app_verify_otp
+from .reverification.views import reverify_lookup
 
 urlpatterns = [
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url='/cosapp/api/schema/'), name='swagger-ui'),
-    path('api/redoc/', SpectacularSwaggerView.as_view(url='/cosapp/api/schema/'), name='redoc'),
+    # path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    # path('api/docs/', SpectacularSwaggerView.as_view(url='/cosapp/api/schema/'), name='swagger-ui'),
+    # path('api/redoc/', SpectacularSwaggerView.as_view(url='/cosapp/api/schema/'), name='redoc'),
     path('check-ctopupno/', check_ctopupno, name='check-ctopupno'),
     path('get-postpaid/', get_postpaid, name='get-postpaid'),
     path('get-prepaid/', get_prepaid, name='get-prepaid'),
@@ -78,5 +80,16 @@ urlpatterns = [
     ############## CUG
     path('get_business_groups/',search_bulk_business_groups, name='search_business_group'),
     path('get_business_group_details/', get_business_group_details, name='get-group-details' ),
+
+    ############ Pre2post
+    path('post_paid_check/',post_to_pre_check, name='search_post_check'),
+
+    ################### sms
+    path('send_otp/',app_send_otp, name='app-sms-send'),
+    path('verify_otp/',app_verify_otp, name='app-verify-otp'),
+
+    ########### reverification
+    
+    path('reverify_lookup/',reverify_lookup, name='check_reverification'),
           
 ]

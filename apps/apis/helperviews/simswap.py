@@ -133,6 +133,9 @@ def simswap_save(request, caf_id, ctopupno, actual_ip,mobileno):
             ss_amount_req=ss.get("AMOUNT_REQ"),
             ss_caf_serial_no=ss.get("CAF_SERIAL_NO"),
             ss_ssa_code=ss.get("SSA_CODE"),
+            remarks = ss.get("REMARKS"),
+            customer_type = ss.get("CUSTOMER_TYPE"),
+            ss_group_id = ss.get("SS_GROUP_ID"),
 
             insert_user=ctopupno,
             ins_user_ip=actual_ip,

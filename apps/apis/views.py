@@ -18,11 +18,12 @@ from django.utils.timezone import now
 from django.db import transaction
 from django.db.models import Q
 from django.forms.models import model_to_dict
-from .utils import is_sim_allotted_today
+from .utils import is_sim_allotted_today,safe_clone_instance
 import logging
 from .dkyc.dkyc_models import CosBcdDkyc
 from itertools import chain
 from apps.apis.external_data.send_mail import send_email_otp
+from apps.apis.esim.models import Esimpostpaid, EsimpostpaidSold, Esimprepaid, EsimprepaidSold
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +217,8 @@ def check_otp(request):
                     'vendor_code':ctop.attached_to,
                     'circle_code':str(ctop.circle_code),
                     'aadhaar_no':aadhaar_no,
+                    'unique_id':ctop.unique_id,
+                    'dealer_type': ctop.dealertype,
                     'pos_latititude': ctop.latitude,
                     'pos_longitude': ctop.longitude
                     }
@@ -768,7 +771,7 @@ def refresh_token(request):
         logger.error(f"Token refresh error: {str(e)}")
         return Response(
             {'success': False, 'message': 'Invalid refresh token'},
-            status=status.HTTP_401_UNAUTHORIZED
+            status=status.HTTP_403_FORBIDDEN
         )
 
 @api_view(['GET'])
@@ -776,10 +779,10 @@ def refresh_token(request):
 def get_app_version(request):
     try:
         # Fetch the latest version (assuming last inserted is latest)
-        version_obj = AppVersion.objects.order_by('-id').first()
+        version_obj = AppVersion.objects.using("read").order_by('-id').first()
         ota_obj = (
             AppOtaUpdate.objects
-            .using("legacy")          # remove if not needed
+            .using("read")          # remove if not needed
             .order_by("-created_at")
             .first()
         )
@@ -889,9 +892,12 @@ def adhar_api_forward(request):
     url = "http://10.201.217.124:9010/api/ekyc-authenticate"
 
     payload = request.data   # <--- FIXED
+    session = requests.Session()
+    session.trust_env = False  # This is the key - ignores environment variables
+    session.proxies = {}
 
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = session.post(url, json=payload,proxies={}, timeout=(3,15))
     except requests.exceptions.RequestException as e:
         return Response(
             {"status": "failure", "message": f"Network error: {str(e)}"},
@@ -1482,14 +1488,79 @@ def release_sim(request):
             },
             status=status.HTTP_200_OK
         )
+    caf_qs = (
+        CosBcd.objects
+        .filter(simnumber=simnumber)
+        .order_by('-live_photo_time')  
+    )
+
+    caf_obj = caf_qs.first()
+    if caf_obj:
+        sim_type = caf_obj.sim_type
+    else:
+        sim_type = None
 
     try:
         with transaction.atomic():
+            
+            # ==================================================
+            # 1️⃣ eSIM
+            # ==================================================
+            if sim_type == 3:
 
+                if category == "prepaid":
+                    sold_model = EsimprepaidSold
+                    target_model = Esimprepaid
+
+                elif category == "postpaid":
+                    sold_model = EsimpostpaidSold
+                    target_model = Esimpostpaid
+
+                else:
+                    return Response(
+                        {"status": "failure", "message": "Invalid category for eSIM"},
+                        status=status.HTTP_200_OK
+                    )
+
+                sold_obj = sold_model.objects.filter(simno=simnumber).first()
+
+                if not sold_obj:
+                    return Response(
+                        {
+                            "status": "failure",
+                            "message": "eSIM already released or not found"
+                        },
+                        status=status.HTTP_200_OK
+                    )
+
+                if target_model.objects.filter(simno=simnumber).exists():
+                    return Response(
+                        {
+                            "status": "failure",
+                            "message": "eSIM already available in pool"
+                        },
+                        status=status.HTTP_200_OK
+                    )
+
+                safe_clone_instance(
+                    sold_obj,
+                    target_model,
+                    exclude_fields=[],  # simno is PK in both, safe
+                    override_fields={
+                        "status": 1, 
+                        "changed_date": timezone.now()
+                    }
+                )
+
+                sold_obj.delete()
+
+        # ==================================================
+        # 2️⃣ Physical SIM
+        # ==================================================
             # ----------------------------
             # POSTPAID
             # ----------------------------
-            if category == "postpaid":
+            elif category == "postpaid" and sim_type == 1:
                 sold_obj = (
                     SimpostpaidSold.objects
                     .filter(simno=simnumber)
@@ -1876,61 +1947,4 @@ def check_aadhaar_onboarding(request):
             "previous_gsm": previous_gsm
         }, status=200)
 
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def email_verify_otp(request):
-
-    email = request.data.get("email_id", "").strip().lower()
-    otp = request.data.get("otp", "").strip()
-
-    if not email or not otp:
-        return Response(
-            {
-                "status": "failure",
-                "message": "Email ID and OTP are required"
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    otp_record = (
-        EmailOtpTable.objects
-        .filter(email_id=email, otp=otp)
-        .order_by("-created_at")
-        .first()
-    )
-
-    if not otp_record:
-        return Response(
-            {
-                "status": "failure",
-                "message": "Invalid OTP"
-            },
-            status=status.HTTP_200_OK
-        )
-
-    # OTP expiry – 10 minutes
-    otp_age = (timezone.now() - otp_record.created_at).total_seconds()
-    if otp_age > 600:
-        otp_record.delete()
-        return Response(
-            {
-                "status": "failure",
-                "message": "OTP expired. Please request a new one."
-            },
-            status=status.HTTP_200_OK
-        )
-
-    return Response(
-        {
-            "status": "success",
-            "message": "OTP verified successfully",
-            "email_id": email,
-            "verified_at": otp_record.created_at
-        },
-        status=status.HTTP_200_OK
-    )
-
-    
 

@@ -115,7 +115,9 @@ def create_sim_upgrade_request(request):
         "alternate_mobile_number":data.get("alternate_mobile_number"),
         "cust_circle_code":data.get("cst_cir_code"),
         "pos_circle_code": data.get("pos_circle_code"),
+        "pos_ba_code": data.get("pos_ssa_code"),
         "mpin": data.get("mpin"),
+
 
         # ----- SS Details -----
         "account_no": ss.get("ACCOUNT_NO"),

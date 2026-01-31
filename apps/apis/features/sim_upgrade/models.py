@@ -89,6 +89,7 @@ class SimUpgradeRequest(models.Model):
     oif = models.CharField(max_length=1, default="0")
     ora_ins_time = models.DateTimeField(null=True, blank=True)
     activation_type = models.CharField(max_length=25, null=True, blank=True)
+    pos_ba_code = models.CharField(max_length=30, null=True, blank=True)
 
     class Meta:
         managed = False

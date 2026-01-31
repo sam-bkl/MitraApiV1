@@ -149,7 +149,7 @@ class CosBcdDkyc(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     category = models.CharField(max_length=25, null=True, blank=True)
     auth_per_desig = models.CharField(max_length=50, null=True, blank=True)
-    cug_reference_id = models.CharField(max_length=20, null=True, blank=True)
+    cug_reference_id = models.CharField(max_length=50, null=True, blank=True)
     cug_group_id = models.CharField(max_length=30, null=True, blank=True)
     class Meta:
         managed = False
@@ -241,7 +241,7 @@ class CompanyInformations(models.Model):
     billing_district = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(null=True, blank=True)
-
+    govt_flag = models.CharField(max_length=20)
     class Meta:
         managed = False
         app_label= 'apis'
@@ -272,6 +272,15 @@ class BulkConnectionDetails(models.Model):
     caf_processed = models.CharField(max_length=3, null=True, blank=True)
     act_status = models.CharField(max_length=3, null=True, blank=True)
     act_remark = models.CharField(max_length=30, null=True, blank=True)
+    master_child = models.CharField(max_length=10, null=True, blank=True)
+    ref_no = models.CharField(max_length=30, null=True, blank=True)
+    master_gsm = models.CharField(max_length=20, null=True, blank=True)
+    used_by = models.CharField(max_length=20, null=True, blank=True)
+    alternate_no = models.CharField(max_length=20, null=True, blank=True)
+    entity_type = models.CharField(max_length=30, null=True, blank=True)
+    upload_id = models.CharField(max_length=10, null=True, blank=True)
+    master_account_no = models.CharField(max_length=30, null=True, blank=True)
+    in_user = models.CharField(max_length=20, null=True, blank=True)
 
     class Meta:
         managed = False

@@ -16,6 +16,9 @@ def send_sms(number,otp):
     trans_id = get_sms_id()
     #trans_id=101
     brps_number=number
+    session = requests.Session()
+    session.trust_env = False  # This is the key - ignores environment variables
+    session.proxies = {}
     number = "0"+str(number)
     payload = {
                     "TransactionId": trans_id,
@@ -32,7 +35,7 @@ def send_sms(number,otp):
                     "MessageBody": f"{otp} is the OTP for login at BSNL COS.The OTP is valid for 10 minutes.Do not share with anyone."
                 }
     try:
-        response = requests.post(url, json=payload, headers=headers,timeout=(3, 5))
+        response = session.post(url, json=payload, headers=headers,timeout=(3, 5))
     except RequestException as e1:
         logger.warning(f"SDC sms unreachable failed: {e1}")
         try:
@@ -64,8 +67,11 @@ def ref_send_sms(number,otp):
                     "CIRCLE": "KL",
                     "MessageBody": f"{otp} is the OTP for local reference at BSNL Sim Activation.The OTP is valid for 10 minutes.Do not share with anyone."
                 }
+    session = requests.Session()
+    session.trust_env = False  # This is the key - ignores environment variables
+    session.proxies = {}
     try:
-        response = requests.post(url, json=payload, headers=headers,timeout=(3, 5))
+        response = session.post(url, json=payload, headers=headers,timeout=(3, 5))
     except RequestException as e1:
         logger.warning(f"SDC sms unreachable failed: {e1}")
         try:
@@ -97,8 +103,11 @@ def upg_send_sms(number,otp):
                     "CIRCLE": "KL",
                     "MessageBody": f"{otp} is the OTP for Sim Upgradation at BSNL COS.The OTP is valid for 10 minutes.Do not share with anyone."
                 }
+    session = requests.Session()
+    session.trust_env = False  # This is the key - ignores environment variables
+    session.proxies = {}
     try:
-        response = requests.post(url, json=payload, headers=headers,timeout=(3, 5))
+        response = session.post(url, json=payload, headers=headers,timeout=(3, 5))
     except RequestException as e1:
         logger.warning(f"SDC sms unreachable failed: {e1}")
         try:
@@ -130,8 +139,11 @@ def dkyc_send_sms(number,sms_type,otp):
                     "CIRCLE": "KL",
                     "MessageBody": f"{otp} is the OTP for {sms_type} at BSNL COS.The OTP is valid for 10 minutes.Do not share with anyone."
                 }
+    session = requests.Session()
+    session.trust_env = False  # This is the key - ignores environment variables
+    session.proxies = {}
     try:
-        response = requests.post(url, json=payload, headers=headers,timeout=(3, 5))
+        response = session.post(url, json=payload, headers=headers,timeout=(3, 5))
     except RequestException as e1:
         logger.warning(f"SDC sms unreachable failed: {e1}")
         try:

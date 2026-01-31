@@ -21,28 +21,28 @@ def get_pool(zone: str):
                 user="ONBOARDKL",
                 password="Onboard_KL2025",
                 dsn="10.19.238.38/SIMSOFT",
-                min=2, max=10, increment=1, threaded=True
+                min=2, max=20, increment=1, threaded=True
             )
         elif zone == "WZ":
             pools[zone] = cx_Oracle.SessionPool(
                 user="ONBOARDKL",
                 password="Onboard_KL2025",
                 dsn="10.102.187.103/SSDB11",
-                min=2, max=10, increment=1, threaded=True
+                min=2, max=20, increment=1, threaded=True
             )
         elif zone == "EZ":
             pools[zone] = cx_Oracle.SessionPool(
                 user="ONBOARDKL",
                 password="Onboard_KL2025",
                 dsn="10.189.1.3/sseast",
-                min=2, max=10, increment=1, threaded=True
+                min=2, max=20, increment=1, threaded=True
             )
         elif zone == "NZ":
             pools[zone] = cx_Oracle.SessionPool(
                 user="ONBOARDKL",
                 password="Onboard_KL2025",
                 dsn="10.190.8.95/SIMIMS",
-                min=2, max=10, increment=1, threaded=True
+                min=2, max=20, increment=1, threaded=True
             )
 
     return pools[zone]
@@ -80,11 +80,13 @@ def get_customer_info(request):
             {"status": "failure", "message": "Invalid circle code"},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    pool = get_pool(zone)
-
-    conn = pool.acquire()
+    conn = None
+    cursor = None
+    result_cursor = None
+    
     try:
+        pool = get_pool(zone)
+        conn = pool.acquire()
         record=get_bcd_details_by_gsm(gsm)
         records = [record] if record else []
         if not records:
@@ -104,6 +106,7 @@ def get_customer_info(request):
         message=""
         if records:
             remarks = records[0].get("REMARKS")
+            cust_type = records[0].get("CUSTOMER_TYPE")
             act_type = records[0].get("ACT_TYPE")
             act_type_upper = (act_type or "").upper()
             category=map_caf_type_to_category(remarks)
@@ -115,6 +118,9 @@ def get_customer_info(request):
                     allowed="No"
                     message="Bulk connections are not allowed, Please contact BSNL Customer Care."
             elif "EKYC" in act_type_upper:
+                allowed="Yes"
+                message= "ALLOWED"
+            elif cust_type == "INDV":
                 allowed="Yes"
                 message= "ALLOWED"
             else:
@@ -136,5 +142,108 @@ def get_customer_info(request):
         )
 
     finally:
-        pool.release(conn)
+        if result_cursor:
+            try:
+                result_cursor.close()
+            except:
+                pass
+        
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        
+        if conn:
+            try:
+                pool.release(conn)
+            except:
+                pass
+
+
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def post_to_pre_check(request):
+
+    serializer = CustomerInfoSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    gsm = serializer.validated_data["gsm"]
+    circle = serializer.validated_data["circle"]
+    req_type = serializer.validated_data["req_type"]
+
+    zone = get_zone_from_circle(int(circle))
+    if not zone:
+        return Response(
+            {"status": "failure", "message": "Invalid circle code"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    conn = None
+    cursor = None
+    result_cursor = None
+
+    try:
+        pool = get_pool(zone)
+        conn = pool.acquire()
+        cursor = conn.cursor()
+        out_cursor = cursor.var(cx_Oracle.CURSOR)
+
+        # Make sure parameters are correct types
+        cursor.callproc(
+            "simmgmt.post_to_pre_check_sm",
+            [gsm, 2, "NORMAL", out_cursor]  # Explicit type conversion
+        )
+
+        result_cursor = out_cursor.getvalue()
+        columns = [col[0] for col in result_cursor.description]
+        records = [dict(zip(columns, row)) for row in result_cursor]
+        if records:
+            status_value = records[0].get("STATUS")
+            if status_value == "INVALID":
+                allow = "No"
+                message = "Disconnect Postpaid Number before conversion"
+            else:
+                if (int(records[0].get("BALANCE")) <= 0):
+                    allow = "Yes"
+                    message = "Conversion Allowed"
+                else:
+                    allow = "No"
+                    message = "Kindly clear the pending bill"
+
+
+        result_cursor.close()  # Close the result cursor
+        cursor.close()  # Close the main cursor
+
+        return Response(
+            {"status": "success","message": message,"allowed": allow, "data": records},
+            status=status.HTTP_200_OK
+        )
+
+
+    except cx_Oracle.DatabaseError as e:
+        error, = e.args
+        return Response(
+            {"status": "error", "message": error.message},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if result_cursor:
+            try:
+                result_cursor.close()
+            except:
+                pass
+        
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        
+        if conn:
+            try:
+                pool.release(conn)
+            except:
+                pass
 

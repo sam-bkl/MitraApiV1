@@ -34,6 +34,7 @@ class CtopMaster(models.Model):
     swap_allowed_user  = models.CharField(max_length=100, null=True)
     start_date = models.DateTimeField(null=True)
     end_date = models.DateTimeField(null=True)
+    unique_id = models.CharField(max_length=50, null=True)
 
     class Meta:
         managed = False
@@ -546,6 +547,9 @@ class CafSimSwapDetails(models.Model):
     ins_user_ip = models.CharField(max_length=50, db_column='ins_user_ip', null=True, blank=True)
     insert_date = models.DateTimeField(db_column='insert_date', null=True, blank=True)
     mpin = models.CharField(max_length=50, db_column='mpin', null=True, blank=True)
+    remarks = models.CharField(max_length=300, null=True, blank=True)
+    customer_type = models.CharField(max_length=100, null=True, blank=True)
+    ss_group_id = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         managed = False

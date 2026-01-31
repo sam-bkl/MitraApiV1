@@ -2,7 +2,7 @@ import base64
 import os
 from datetime import datetime
 from io import BytesIO
-
+import traceback
 from django.db import transaction, DatabaseError
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Esimprepaid,EsimprepaidSold
+from .models import Esimprepaid,EsimprepaidSold,Esimpostpaid
 from ..models import CosBcd, Simprepaid, Simpostpaid
 from .serializers import UpdateCAFDetailsSerializer
 from ..helper_functions import check_gsm_caf_logic
@@ -18,7 +18,8 @@ from ..utils import is_sim_allotted_today, insert_sim_allotment
 from ..helperviews.simswap import simswap_save
 from .. import create_cafid
 from ..inventory_movement.inv_update import update_inventory_atomic
-
+from ..reverification.helper_function import rev_ekyc_save
+from django.db.models import Q
 
 def extract_client_ip(request):
     """Extract actual client IP from request"""
@@ -178,26 +179,43 @@ def determine_sim_type(simno, connection_type):
         return 2
     return 1
 
-def reserve_esim(circle_code):
+def reserve_esim(circle_code,connection_type):
     """
     Atomically reserve ONE available eSIM.
     Safe against parallel requests.
     """
+    if connection_type == 1: 
+        esim = (
+            Esimprepaid.objects
+            .select_for_update(skip_locked=True)
+            .filter(status=1, circle_code=circle_code, qr_code__isnull=False)
+            .filter(Q(dual_imsi__isnull=True) | Q(dual_imsi="N"))
+            .order_by("simno")   # deterministic selection
+            .first()
+        )
 
-    esim = (
-        Esimprepaid.objects
-        .select_for_update(skip_locked=True)
-        .filter(status=1, circle_code=circle_code)
-        .order_by("simno")   # deterministic selection
-        .first()
-    )
+        if not esim:
+            raise ValidationError("No eSIM available for allocation")
 
-    if not esim:
-        raise ValidationError("No eSIM available for allocation")
+        esim.status = 2  # Reserved
+        esim.changed_date = timezone.now()
+        esim.save(update_fields=["status", "changed_date"])
+    else:
+        esim = (
+            Esimpostpaid.objects
+            .select_for_update(skip_locked=True)
+            .filter(status=1, circle_code=circle_code, qr_code__isnull=False)
+            .filter(Q(dual_imsi__isnull=True) | Q(dual_imsi="N"))
+            .order_by("simno")   # deterministic selection
+            .first()
+        )
 
-    esim.status = 2  # Reserved
-    esim.changed_date = timezone.now()
-    esim.save(update_fields=["status", "changed_date"])
+        if not esim:
+            raise ValidationError("No eSIM available for allocation")
+
+        esim.status = 2  # Reserved
+        esim.changed_date = timezone.now()
+        esim.save(update_fields=["status", "changed_date"])
 
     return esim
 
@@ -216,34 +234,39 @@ def update_caf_details_esim(request):
     # 1️⃣ VALIDATION & DESERIALIZATION
     # =====================================================
     serializer = UpdateCAFDetailsSerializer(data=request.data)
-
-    # if not serializer.is_valid():
-
-    # # 🔴 LOG VALIDATION ERROR HERE
-    #     with open("/home/bsnlcos/apis/logs/serializer_errors.txt", "a") as f:
+    # with open("/home/bsnlcos/apis/logs/revc.txt", "a") as f:
     #         f.write(
     #             f"\n[{timezone.now()}] UpdateCAFDetailsSerializer ERROR\n"
-    #             f"errors: {serializer.errors}\n"
     #             f"payload: {request.data}\n"
     #         )
 
-    #     return Response(
-    #         {
-    #             "status": "error",
-    #             "message": "Validation failed",
-    #             "errors": serializer.errors
-    #         },
-    #         status=400
-    #     )
     if not serializer.is_valid():
+
+    # 🔴 LOG VALIDATION ERROR HERE
+        with open("/home/bsnlcos/apis/logs/serializer_errors.txt", "a") as f:
+            f.write(
+                f"\n[{timezone.now()}] UpdateCAFDetailsSerializer ERROR\n"
+                f"errors: {serializer.errors}\n"
+                f"payload: {request.data}\n"
+            )
+
         return Response(
             {
                 "status": "error",
                 "message": "Validation failed",
                 "errors": serializer.errors
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=400
         )
+    # if not serializer.is_valid():
+    #     return Response(
+    #         {
+    #             "status": "error",
+    #             "message": "Validation failed",
+    #             "errors": serializer.errors
+    #         },
+    #         status=status.HTTP_400_BAD_REQUEST
+    #     )
 
     data = serializer.validated_data
 
@@ -306,7 +329,10 @@ def update_caf_details_esim(request):
         with transaction.atomic(using="legacy"):
             
             # Generate CAF ID
-            caf_no = create_cafid.get_caf_id()
+            if data["caf_type"] in ("rev-ekyc"):
+                caf_no = create_cafid.get_caf_id("ERV")
+            else:
+                caf_no = create_cafid.get_caf_id()
             if not caf_no:
                 raise ValidationError("Failed to generate CAF ID")
 
@@ -323,7 +349,7 @@ def update_caf_details_esim(request):
 
             # Handle SIMSWAP special case
             simstate = circle_code
-            if data['caf_type'] == 'simswap':
+            if data["caf_type"] in ("simswap", "post2pre", "pre2post"):
                 simswap_result = simswap_save(
                     request, caf_no, data['ctopup_number'], 
                     actual_ip, data['mobileno']
@@ -331,34 +357,43 @@ def update_caf_details_esim(request):
                 if simswap_result.get("status") != "success":
                     raise ValidationError(simswap_result.get("message", "SIMSWAP failed"))
                 simstate = simswap_result.get("circle_code_cust", circle_code)
+            elif data["caf_type"] in ("rev-ekyc"):
+                rev_ekyc_details = request.data.get("rev_ekyc_details", {})
+                rev_ekyc_result = rev_ekyc_save(request, rev_ekyc_details,caf_no)
+                if rev_ekyc_result["status"] != "success":
+                    raise ValidationError(rev_ekyc_result.get("message", "Reverification Failed"))
+                simstate = rev_ekyc_result.get("circle_code_cust", circle_code)
 
             # Parse data
             poi_data = extract_poi_data(data.get('Poi', {}))
             poa_data = extract_poa_data(data.get('Poa', {}))
-
+            simno = data.get("simno") or None
             local_ref = data.get('outstation_reference', {})
             postpaid_details = data.get('postpaid_details', {})
-            frc_details = data.get('frc_details', {})
-            mnp_details = data.get('mnp_details', {})
-            current_location = data.get('current_location', {})
+            frc_details = data.get('frc_details') or {}
+            mnp_details = data.get('mnp_details') or {}
+            current_location = data.get('current_location') or {}
 
             # Determine connection type code
             connection_type_code = 2 if data['connection_type'] == 'postpaid' else 1
-            esim_obj = reserve_esim(circle_code)
+            if data['sim_category'] == "esim" :
+                esim_obj = reserve_esim(circle_code,connection_type_code)
+                simno = esim_obj.simno
+                sim_type = 3
+                sim_mode = data['sim_category']
+            else:                      
+                # Determine SIM type
+                sim_type = determine_sim_type(data['simno'], connection_type_code)
+                sim_mode = data['sim_category']
+                #sim_type = determine_sim_type(simno, connection_type_code)
             
-                
-            simno = esim_obj.simno
-            # Determine SIM type
-            #sim_type = determine_sim_type(data['simno'], connection_type_code)
-            #sim_type = determine_sim_type(simno, connection_type_code)
-            sim_type = 3
             # Create CosBcd record using builder pattern
             builder = CosBcdBuilder(caf_no)
             
             # Basic fields
             builder.add_fields(
                 de_csccode=data.get('vendorcode'),
-                de_username=data.get('ctopup_username') or data.get('ctopup_number'),
+                de_username=data.get('ctopup_username') ,
                 parent_ctopup_number=data.get('ctopup_number'),
                 gsmnumber=data['mobileno'],
                 simnumber=simno,
@@ -474,7 +509,7 @@ def update_caf_details_esim(request):
             
             # Connection-specific fields
             if data['connection_type'] == 'postpaid':
-                plan = postpaid_details.get('plan', {})
+                plan = postpaid_details.get('plan') or {}
                 builder.add_fields(
                     std_isd=postpaid_details.get('stdIsd'),
                     deposit_required=postpaid_details.get('deposit'),
@@ -496,7 +531,19 @@ def update_caf_details_esim(request):
             record = builder.build()
 
             # SAVE RECORD
-            record.save()
+            try:
+                record.save()
+            except Exception as e:
+                with open("/home/bsnlcos/apis/logs/db_length_error.txt", "a") as f:
+                    f.write(f"\n[{timezone.now()}] DB ERROR\n")
+                    for field in record._meta.fields:
+                        val = getattr(record, field.name, None)
+                        if isinstance(val, str):
+                            f.write(
+                                f"{field.name} (len={len(val)} max={getattr(field, 'max_length', None)}): {val[:200]}\n"
+                            )
+                    f.write(str(e) + "\n")
+                raise  # ✅ Rollback WILL happen
             
             # Verify save
             if not CosBcd.objects.filter(caf_serial_no=caf_no).exists():
@@ -504,12 +551,13 @@ def update_caf_details_esim(request):
 
             # Update inventory (SIM + GSM)
 
-            update_inventory_atomic(
-                simno=simno,
-                gsmno=data['mobileno'],
-                connection_type=connection_type_code,
-                plan=data['caf_type'],sim_mode='esim'
-            )
+            if data['caf_type'] != 'rev-ekyc':
+                update_inventory_atomic(
+                    simno=simno,
+                    gsmno=data['mobileno'],
+                    connection_type=connection_type_code,
+                    caf_type=data['caf_type'],sim_mode=sim_mode
+                )
 
 
             # Record allotment
@@ -535,14 +583,14 @@ def update_caf_details_esim(request):
         )
     except Exception as e:
         return Response(
-            {
-                "status": "error",
-                "message": "An unexpected error occurred",
-                "type": "server_error"
-                
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+            "type": "server_error"
+        },
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
 
     # =====================================================
     # 5️⃣ SUCCESS RESPONSE
@@ -550,13 +598,13 @@ def update_caf_details_esim(request):
     return Response({
         "status": "success",
         "message": "CAF details updated successfully",
-        "data": {
-            "caf_id": caf_no,
-            "mobileno": data['mobileno'],
-            "simnumber": simno,
-            "connection_type": data['connection_type'],
-            "caf_type": data['caf_type'],
-            "timestamp": timezone.now().isoformat(),
+        
+        "caf_id": caf_no,
+        "mobileno": data['mobileno'],
+        "simnumber": simno,
+        "category": data['connection_type'],
+        "caf_type": data['caf_type'],
+        "time_act": timezone.now().isoformat(),
             
-        }
+        
     }, status=status.HTTP_200_OK)

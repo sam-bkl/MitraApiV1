@@ -16,7 +16,7 @@ class AppUpgradeOptionsSerializer(serializers.ModelSerializer):
 
 class SimUpgradeRequestListSerializer(serializers.ModelSerializer):
 
-    status = serializers.SerializerMethodField()
+    upgrade_status = serializers.SerializerMethodField()
 
     class Meta:
         model = SimUpgradeRequest
@@ -31,9 +31,10 @@ class SimUpgradeRequestListSerializer(serializers.ModelSerializer):
             "ssa_code",
             "created_at",
             "insert_user",
-            "status",  # 👈 added
+            "upgrade_status",  # 👈 added
+            "pos_ba_code"
         )
 
-    def get_status(self, obj):
+    def get_upgrade_status(self, obj):
         status_map = self.context.get("oracle_status_map", {})
         return status_map.get(obj.mobile_number, "PENDING")
